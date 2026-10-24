@@ -3,8 +3,9 @@ set -euo pipefail
 # manage.sh (physical) for jiangshan-map — static atlas site, pidfile + nohup.
 # Local serve: python3 server.py (repo root over HTTP, /health on port 8930).
 # Deploy = zero-transfer, run entirely in this directory:
-#   validate (node) → sync koven2049 fork (origin) → publish upstream
-#   (DeanChensj/jiangshan-map is the GitHub Pages source of deanchen.me).
+#   validate (node) → merge upstream (stay current) → push origin
+#   (koven2049/jiangshan-map — the ONLY remote this checkout publishes to;
+#   the public deanchen.me site is published from the upstream side).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -157,24 +158,10 @@ cmd_deploy() {
   "$node_bin" scripts/validate_atlas.js \
     || { log_error "验证未通过——不发布"; exit 1; }
 
-  # 4. 双推：origin 同步 + upstream 发布
-  log_step "推送 origin（koven2049 同步）…"
+  # 4. 发布：唯一目标 = origin（koven2049 fork），不推任何其他仓
+  log_step "推送 origin（koven2049/jiangshan-map）…"
   git -C "$SCRIPT_DIR" push origin "$branch" || { log_error "推 origin 失败"; exit 1; }
-  log_step "推送 upstream（发布 deanchen.me）…"
-  local push_err=/tmp/jiangshan-map-push.err
-  if ! git -C "$SCRIPT_DIR" push upstream "$branch" 2>"$push_err"; then
-    if grep -q "Permission to\|publickey\|denied" "$push_err"; then
-      log_error "推 upstream 被拒：DeanChensj 的推送公钥还没配置（一次性设置）。"
-      log_error "把下面这把公钥加到 GitHub → DeanChensj/jiangshan-map → Settings → Deploy keys，勾选 Allow write access："
-      echo "    $(cat "$HOME/.ssh/jiangshan_map_deploy.pub" 2>/dev/null || echo '<~/.ssh/jiangshan_map_deploy.pub 不存在>')"
-    else
-      log_error "推 upstream 失败：$(tail -2 "$push_err")"
-    fi
-    rm -f "$push_err"
-    exit 1
-  fi
-  rm -f "$push_err"
-  log_ok "已发布 → https://deanchen.me/jiangshan-map/（Pages 构建约 1 分钟后生效）；origin 已同步。"
+  log_ok "已发布 → origin（koven2049/jiangshan-map）。"
 }
 
 pick_node() {
@@ -189,11 +176,10 @@ usage() {
   cat <<EOF
 ${SERVICE} (physical) — interactive historical atlas of China (static site)
 
-Serves the repo root over HTTP from this directory (port $PORT). Publishes
-to https://deanchen.me/jiangshan-map/ via GitHub Pages: deploy runs entirely
-in this directory — validate, sync the koven2049 fork (origin), push the
-upstream repo DeanChensj/jiangshan-map (the Pages source). Nothing is
-transferred to any machine.
+Serves the repo root over HTTP from this directory (port $PORT). Deploy runs
+entirely in this directory — validate, merge upstream (read-only), then push
+origin (koven2049/jiangshan-map, the only publish target). Nothing is
+transferred to any machine; the upstream repo is never pushed.
 
 Usage: ./manage.sh <command> [options]
 
@@ -204,7 +190,7 @@ Commands:
   restart   stop + start
   status    Process + /health probe (exit 0 only when fully green)
   logs      Tail server.log
-  deploy [-d]  Validate → merge upstream → push origin (sync) + upstream (publish)
+  deploy [-d]  Validate → merge upstream (read-only) → push origin (publish)
   help      Show this help
 
 Examples:

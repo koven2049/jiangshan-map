@@ -1,6 +1,5 @@
 env = production
-# 零传输部署：deploy 只在当前目录执行（验证 + 推 GitHub），不同步任何机器
-# - push origin（koven2049/jiangshan-map）= 代码同步
-# - push upstream（DeanChensj/jiangshan-map）= 发布 deanchen.me（GitHub Pages 发布源）
+# 零传输部署：deploy 只在当前目录执行，唯一发布目标 = origin（koven2049/jiangshan-map）。
+# upstream（DeanChensj）仅只读：deploy 自动 merge 上游新提交后推 origin，永不推上游。
 ssh_target =
 remote_path =
