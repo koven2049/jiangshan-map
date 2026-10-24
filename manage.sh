@@ -3,9 +3,8 @@ set -euo pipefail
 # manage.sh (physical) for jiangshan-map — static atlas site, pidfile + nohup.
 # Local serve: python3 server.py (repo root over HTTP, /health on port 8930).
 # Deploy = zero-transfer, run entirely in this directory:
-#   validate (node) → merge upstream (stay current) → push origin
-#   (koven2049/jiangshan-map — the ONLY remote this checkout publishes to;
-#   the public deanchen.me site is published from the upstream side).
+#   validate (node) → push origin (koven2049/jiangshan-map — the ONLY remote
+#   this checkout touches; the upstream repo is never fetched or pushed).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -132,33 +131,18 @@ cmd_deploy() {
     exit 1
   fi
 
-  # 2. 同步上游：本地只发布包含 upstream/main 最新提交的内容
-  git -C "$SCRIPT_DIR" fetch origin -q
-  git -C "$SCRIPT_DIR" fetch upstream -q
-  local behind
-  behind="$(git -C "$SCRIPT_DIR" rev-list --count "$branch..upstream/main")"
-  if (( behind > 0 )); then
-    if [[ "$dry_run" == true ]]; then
-      log_info "DRY RUN: upstream 有 $behind 个新提交，将先 merge upstream/main 再发布"
-    else
-      log_step "上游有 $behind 个新提交，先 merge upstream/main …"
-      git -C "$SCRIPT_DIR" merge upstream/main --no-edit \
-        || { log_error "合并冲突——解决后 commit，再重跑 ./manage.sh deploy"; exit 1; }
-    fi
-  fi
-
-  # 3. 发布闸：零依赖校验套件全绿才推
+  # 2. 发布闸：零依赖校验套件全绿才推
   local node_bin; node_bin="$(pick_node)"
   [[ -n "$node_bin" ]] || { log_error "node 不可用——发布前验证（scripts/validate_atlas.js）无法执行"; exit 1; }
   if [[ "$dry_run" == true ]]; then
-    log_info "DRY RUN ($env_val): 验证 ✓ → git push origin $branch（koven2049 同步）→ git push upstream $branch（发布 deanchen.me）"
+    log_info "DRY RUN ($env_val): 验证 ✓ → git push origin $branch（koven2049/jiangshan-map）"
     return 0
   fi
   log_step "发布闸：node scripts/validate_atlas.js …"
   "$node_bin" scripts/validate_atlas.js \
     || { log_error "验证未通过——不发布"; exit 1; }
 
-  # 4. 发布：唯一目标 = origin（koven2049 fork），不推任何其他仓
+  # 3. 发布：唯一目标 = origin（koven2049 fork），不推任何其他仓
   log_step "推送 origin（koven2049/jiangshan-map）…"
   git -C "$SCRIPT_DIR" push origin "$branch" || { log_error "推 origin 失败"; exit 1; }
   log_ok "已发布 → origin（koven2049/jiangshan-map）。"
@@ -177,9 +161,9 @@ usage() {
 ${SERVICE} (physical) — interactive historical atlas of China (static site)
 
 Serves the repo root over HTTP from this directory (port $PORT). Deploy runs
-entirely in this directory — validate, merge upstream (read-only), then push
-origin (koven2049/jiangshan-map, the only publish target). Nothing is
-transferred to any machine; the upstream repo is never pushed.
+entirely in this directory — validate, then push origin
+(koven2049/jiangshan-map, the only publish target). Nothing is transferred
+to any machine; no other remote is fetched or pushed.
 
 Usage: ./manage.sh <command> [options]
 
@@ -190,7 +174,7 @@ Commands:
   restart   stop + start
   status    Process + /health probe (exit 0 only when fully green)
   logs      Tail server.log
-  deploy [-d]  Validate → merge upstream (read-only) → push origin (publish)
+  deploy [-d]  Validate → push origin (koven2049/jiangshan-map)
   help      Show this help
 
 Examples:

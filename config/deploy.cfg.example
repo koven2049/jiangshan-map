@@ -1,5 +1,5 @@
 env = production
-# 零传输部署：deploy 只在当前目录执行，唯一发布目标 = origin（koven2049/jiangshan-map）。
-# upstream（DeanChensj）仅只读：deploy 自动 merge 上游新提交后推 origin，永不推上游。
+# 零传输部署：deploy 只在当前目录执行（验证 + 推 origin），不 fetch/merge/push 任何其他仓。
+# 唯一发布目标 = origin（koven2049/jiangshan-map）。
 ssh_target =
 remote_path =
