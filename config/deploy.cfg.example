@@ -1,0 +1,3 @@
+env = production
+ssh_target = admin@ts-macmini-m4
+remote_path = /Users/admin/Documents/workspace/ai/ai-projects/jiangshan-map
