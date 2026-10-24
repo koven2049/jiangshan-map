@@ -27,6 +27,7 @@ function main() {
     'map_data.js',
     'lore_data.js',
     'i18n_dict.js',
+    'zh_hant.js',
   ];
   let bootSnapshots = null;
   for (const file of dataScripts) {
@@ -661,6 +662,13 @@ function main() {
   assert.strictEqual(ctrl.formatEraLabel(1082, dynasties[11]), '北宋神宗·元丰五年');
   assert.strictEqual(ctrl.formatEraLabel(1587, dynasties[14]), '明万历十五年');
   assert.strictEqual(ctrl.formatEraLabel(1683, dynasties[15]), '清康熙二十二年');
+  const prcDynObj = dynasties.find((d) => d.key === 'prc');
+  assert.strictEqual(ctrl.formatSpan(prcDynObj), '1949 —', 'PRC dynasty span must be open-ended (1949 —)');
+  const prcSearchHit = ctrl._queryQuickSearch('中华人民共和国').find((h) => h.kind === 'dynasty' && h.dynasty.key === 'prc');
+  assert(
+    prcSearchHit && prcSearchHit.subZh.startsWith('1949—') && prcSearchHit.subEn.startsWith('1949 CE –'),
+    `Expected PRC quick search subtitle to use open-ended 1949— / 1949 CE –, got ${JSON.stringify(prcSearchHit)}`
+  );
 
   // CUJ 9h: Adjacent / Overlapping Polity Color Collision Guard across all snapshots
   function shapeBbox(shape) {
@@ -1513,8 +1521,8 @@ function main() {
       snapshots.s_zhanguo_e2.prefectures.length === 26 &&
       snapshots.s_zhanguo_e4.prefectures.length === 27 &&
       snapshots.s_zhanguo_e5.prefectures.length === 34 &&
-      snapshots.s_qin_a.prefectures.length === 37 &&
-      snapshots.s_qin_b.prefectures.length === 38 &&
+      snapshots.s_qin_a.prefectures.length === 36 &&
+      snapshots.s_qin_b.prefectures.length === 37 &&
       snapshots.s_qin.prefectures.length === 41 &&
       snapshots.s_xihan_b.prefectures.length >= 50 &&
       snapshots.s_donghan.prefectures.length >= 48,
@@ -2311,7 +2319,7 @@ function main() {
       `${sk} must model post-877 fragmented Tibet as uncolored 吐蕃诸部 (role="neighbor", tint=null)`
     );
   }
-  const nzSnapKeys = [...tangSnapKeys, 's_wudai_a', 's_wudai_b1', 's_wudai_b', 's_wudai_b2'];
+  const nzSnapKeys = [...tangSnapKeys];
   for (const sk of nzSnapKeys) {
     const nzPol = (snapshots[sk].polities || []).find((p) => p.title === '南诏');
     assert(
@@ -2325,6 +2333,86 @@ function main() {
     assert(
       pointInShape(102.68, 24.82, nzPol.shape),
       `${sk}: 南诏 polygon must contain Dianchi/Kunming ([102.68, 24.82])`
+    );
+  }
+  const dchSnapKeys = ['s_wudai_a', 's_wudai_b1', 's_wudai_b', 's_wudai_b2'];
+  for (const sk of dchSnapKeys) {
+    const dchPol = (snapshots[sk].polities || []).find((p) => p.title === '大长和');
+    assert(
+      dchPol && dchPol.role === 'rival' && dchPol.tint === '#7a5c91',
+      `${sk} must model post-902 Yunnan regime as 大长和 (role="rival", tint="#7a5c91")`
+    );
+    assert(
+      pointInShape(100.161, 25.691, dchPol.shape),
+      `${sk}: 大长和 polygon must contain Taihecheng/Dali capital ([100.161, 25.691])`
+    );
+    assert(
+      pointInShape(102.68, 24.82, dchPol.shape),
+      `${sk}: 大长和 polygon must contain Dianchi/Kunming ([102.68, 24.82])`
+    );
+  }
+  // Verify Wudai (907-960 CE) territorial invariants against Old History of the Five Dynasties (《旧五代史》):
+  // 1) Yang Wu (吴) holds Yangzhou ([119.42, 32.39]) and Shouzhou ([116.78, 32.58]) north to the Huai River in 907-936
+  for (const sk of ['s_wudai_a', 's_wudai_b1', 's_wudai_b', 's_wudai_b2', 's_wudai_c0']) {
+    const wuPol = (snapshots[sk].polities || []).find((p) => p.title === '吴');
+    assert(
+      wuPol && pointInShape(119.42, 32.39, wuPol.shape) && pointInShape(116.78, 32.58, wuPol.shape),
+      `${sk}: 吴 polygon must contain Yangzhou ([119.42, 32.39]) and Shouzhou ([116.78, 32.58]) up to the Huai River`
+    );
+  }
+  // 2) Sixteen Prefectures of Yanyun (Yingzhou [116.09, 38.44], Mozhou [116.10, 38.71], Shuozhou [112.43, 39.32]) in Khitan/Liao (936-958),
+  //    then Yingzhou, Mozhou, Yizhou ([115.49, 39.35]), and Waqiao Pass ([116.08, 39.00]) recovered by Later Zhou in 959 (s_wudai_e2)
+  for (const sk of ['s_wudai_c0', 's_wudai_c', 's_wudai_c2', 's_wudai_d', 's_wudai_e', 's_wudai_e1']) {
+    const liaoPol = (snapshots[sk].polities || []).find((p) => p.title === '契丹' || p.title === '辽');
+    assert(
+      liaoPol &&
+        pointInShape(116.09, 38.44, liaoPol.shape) &&
+        pointInShape(116.1, 38.71, liaoPol.shape) &&
+        pointInShape(112.43, 39.32, liaoPol.shape),
+      `${sk}: ${liaoPol ? liaoPol.title : '契丹/辽'} must contain Yanyun prefectures Yingzhou, Mozhou, and Shuozhou`
+    );
+  }
+  {
+    const zhouE2 = (snapshots.s_wudai_e2.polities || []).find((p) => p.title === '后周');
+    const liaoE2 = (snapshots.s_wudai_e2.polities || []).find((p) => p.title === '辽');
+    assert(
+      zhouE2 &&
+        pointInShape(116.09, 38.44, zhouE2.shape) &&
+        pointInShape(116.1, 38.71, zhouE2.shape) &&
+        pointInShape(115.49, 39.35, zhouE2.shape) &&
+        pointInShape(116.08, 39.0, zhouE2.shape) &&
+        liaoE2 &&
+        pointInShape(116.4, 39.9, liaoE2.shape),
+      's_wudai_e2 (959 CE): 后周 must contain recovered Yingzhou, Mozhou, Yizhou, and Waqiao Pass while Youzhou remains in 辽'
+    );
+  }
+  // 3) Datong Basin (Yunzhou [113.30, 40.08], Yingzhou [113.19, 39.55], Huanzhou [112.43, 39.57], Shuozhou [112.43, 39.32]) in Liao,
+  //    while Daizhou ([112.95, 39.06]) and Taiyuan ([112.55, 37.87]) belong to Northern Han (北汉) in 951-960
+  for (const sk of ['s_wudai_e', 's_wudai_e1', 's_wudai_e2']) {
+    const liaoPol = (snapshots[sk].polities || []).find((p) => p.title === '辽');
+    const bhPol = (snapshots[sk].polities || []).find((p) => p.title === '北汉');
+    assert(
+      liaoPol &&
+        pointInShape(113.3, 40.08, liaoPol.shape) &&
+        pointInShape(113.19, 39.55, liaoPol.shape) &&
+        pointInShape(112.43, 39.57, liaoPol.shape) &&
+        pointInShape(112.43, 39.32, liaoPol.shape) &&
+        bhPol &&
+        pointInShape(112.95, 39.06, bhPol.shape) &&
+        pointInShape(112.55, 37.87, bhPol.shape),
+      `${sk}: 辽 must hold Yun, Ying, Huan, Shuo north of Yanmen Pass while 北汉 holds Daizhou and Taiyuan`
+    );
+  }
+  // 4) Fuzhou ([119.30, 26.08]) in Wuyue (吴越) vs Jianzhou ([118.32, 27.02]) in Southern Tang (南唐) after Fall of Min (945-960)
+  for (const sk of ['s_wudai_c2', 's_wudai_d', 's_wudai_e', 's_wudai_e1', 's_wudai_e2']) {
+    const wyPol = (snapshots[sk].polities || []).find((p) => p.title === '吴越');
+    const ntPol = (snapshots[sk].polities || []).find((p) => p.title === '南唐');
+    assert(
+      wyPol &&
+        pointInShape(119.3, 26.08, wyPol.shape) &&
+        ntPol &&
+        pointInShape(118.32, 27.02, ntPol.shape),
+      `${sk}: 吴越 must contain Fuzhou ([119.30, 26.08]) while 南唐 contains Jianzhou ([118.32, 27.02])`
     );
   }
   const tangDynObj = dynasties.find((d) => d.key === 'tang');
@@ -2345,10 +2433,10 @@ function main() {
     }
     return s;
   }
-  for (const sk of [...nzSnapKeys, ...daliSnapKeys]) {
+  for (const sk of [...nzSnapKeys, ...dchSnapKeys, ...daliSnapKeys]) {
     const pols = snapshots[sk].polities || [];
-    const swPol = pols.find((p) => p.title === '南诏' || p.title === '大理');
-    assert(swPol && swPol.shape, `${sk} must contain 南诏 or 大理`);
+    const swPol = pols.find((p) => p.title === '南诏' || p.title === '大长和' || p.title === '大理');
+    assert(swPol && swPol.shape, `${sk} must contain 南诏, 大长和, or 大理`);
     const swVerts = collectVertices(swPol.shape);
     const otherVerts = new Set();
     for (const p of pols) {
@@ -3318,6 +3406,404 @@ function main() {
     );
   }
 
+  // 23x. Western Jin and Eastern Jin & Sixteen Kingdoms (Book of Jin / 《晋书》 & Tan Qixiang Vol 4)
+  {
+    const jiankang = [118.801, 32.061];
+    const jingkou = [119.451, 32.201];
+    const dongjinSnaps = [
+      's_dongjin_a0',
+      's_dongjin_a',
+      's_dongjin_a2',
+      's_dongjin_b',
+      's_dongjin_b2',
+      's_dongjin_c',
+      's_dongjin_d0',
+      's_dongjin_d1',
+      's_dongjin_d',
+      's_dongjin_e',
+      's_dongjin_f',
+    ];
+    for (const sk of dongjinSnaps) {
+      const snap = snapshots[sk];
+      assert(snap, `Missing snapshot: ${sk}`);
+      const djPol = snap.polities.find((p) => p.title === '东晋');
+      assert(djPol && djPol.shape, `${sk} must have 东晋 polity with valid shape`);
+      assert(
+        pointInShape(jiankang[0], jiankang[1], djPol.shape),
+        `${sk}: Jiankang ([118.801, 32.061]) must be inside Eastern Jin (东晋)`
+      );
+      assert(
+        pointInShape(jingkou[0], jingkou[1], djPol.shape),
+        `${sk}: Jingkou ([119.451, 32.201]) must be inside Eastern Jin (东晋)`
+      );
+    }
+
+    // Guzang ([102.641, 37.931]) inside Liangzhou polities (Former/Later/Northern Liang or unified Former Qin)
+    const guzang = [102.641, 37.931];
+    const guzangCases = [
+      ['s_dongjin_a0', '前凉'],
+      ['s_dongjin_a', '前凉'],
+      ['s_dongjin_a2', '前凉'],
+      ['s_dongjin_b', '前凉'],
+      ['s_dongjin_b2', '前凉'],
+      ['s_dongjin_c', '前秦（苻坚一统北方）'],
+      ['s_dongjin_d0', '后凉'],
+      ['s_dongjin_d1', '北凉'],
+      ['s_dongjin_d', '北凉'],
+      ['s_dongjin_e', '北凉'],
+      ['s_dongjin_f', '北凉'],
+    ];
+    for (const [sk, expectedTitle] of guzangCases) {
+      const snap = snapshots[sk];
+      const pol = snap.polities.find((p) => p.title === expectedTitle);
+      assert(pol && pol.shape, `${sk} must contain polity "${expectedTitle}"`);
+      assert(
+        pointInShape(guzang[0], guzang[1], pol.shape),
+        `${sk}: Guzang ([102.641, 37.931]) must be inside ${expectedTitle}`
+      );
+    }
+
+    // Western Jin 304-305 CE (s_xijin) must include 晋, 汉赵, and 成汉; Chengdu inside 成汉
+    const chengdu = [104.071, 30.571];
+    const xijinSnap = snapshots.s_xijin;
+    assert(xijinSnap, 'Missing s_xijin snapshot');
+    const chPol = xijinSnap.polities.find((p) => p.title === '成汉');
+    assert(chPol && chPol.shape, 's_xijin must include 成汉 polity');
+    assert(
+      pointInShape(chengdu[0], chengdu[1], chPol.shape),
+      's_xijin: Chengdu ([104.071, 30.571]) must be inside 成汉'
+    );
+    assert(
+      xijinSnap.polities.some((p) => p.title === '晋') &&
+        xijinSnap.polities.some((p) => p.title === '汉赵'),
+      's_xijin must include both 晋 and 汉赵 polities'
+    );
+
+    // Capital periods verification for xijin and dongjin
+    const xjDyn = dynasties.find((d) => d.key === 'xijin');
+    const djDyn = dynasties.find((d) => d.key === 'dongjin');
+    const findSt = (d, ancient) => (d.settlements || []).find((s) => s.ancient === ancient);
+
+    const luoyangXJ = findSt(xjDyn, '洛阳');
+    assert(luoyangXJ && Array.isArray(luoyangXJ.capitalPeriods), 'xijin: 洛阳 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(luoyangXJ.capitalPeriods), JSON.stringify([[280, 311]]), 'xijin: 洛阳 capitalPeriods must be [[280, 311]]');
+
+    const changanXJ = findSt(xjDyn, '长安');
+    assert(changanXJ && Array.isArray(changanXJ.capitalPeriods), 'xijin: 长安 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(changanXJ.capitalPeriods), JSON.stringify([[313, 316]]), 'xijin: 长安 capitalPeriods must be [[313, 316]]');
+
+    const chengduXJ = findSt(xjDyn, '成都');
+    assert(chengduXJ && Array.isArray(chengduXJ.capitalPeriods), 'xijin: 成都 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(chengduXJ.capitalPeriods), JSON.stringify([[306, 316]]), 'xijin: 成都 capitalPeriods must be [[306, 316]]');
+
+    const yeDJ = findSt(djDyn, '邺');
+    assert(yeDJ && Array.isArray(yeDJ.capitalPeriods), 'dongjin: 邺 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(yeDJ.capitalPeriods), JSON.stringify([[335, 370]]), 'dongjin: 邺 capitalPeriods must be [[335, 370]]');
+
+    const pingchengDJ = findSt(djDyn, '平城');
+    assert(pingchengDJ && Array.isArray(pingchengDJ.capitalPeriods), 'dongjin: 平城 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(pingchengDJ.capitalPeriods), JSON.stringify([[398, 420]]), 'dongjin: 平城 capitalPeriods must be [[398, 420]]');
+
+    const guzangDJ = findSt(djDyn, '姑臧（凉州）');
+    assert(guzangDJ && Array.isArray(guzangDJ.capitalPeriods), 'dongjin: 姑臧 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(guzangDJ.capitalPeriods), JSON.stringify([[320, 376], [386, 403], [412, 420]]), 'dongjin: 姑臧 capitalPeriods must match');
+  }
+
+  // 23y. Southern and Northern Dynasties (Nanbei / Zizhi Tongjian, Nan Shi, Bei Shi & Tan Qixiang Vol 4)
+  {
+    const jiankang = [118.801, 32.061];
+    const jingkou = [119.451, 32.201];
+    const nanbeiSnaps = [
+      ['s_nanbei_0', '宋', '魏'],
+      ['s_nanbei_0b', '宋', '魏'],
+      ['s_nanbei_0c', '宋', '魏'],
+      ['s_nanbei_a', '宋', '魏'],
+      ['s_nanbei_a2', '宋', '魏'],
+      ['s_nanbei_b', '齐', '魏'],
+      ['s_nanbei_c', '梁', '魏'],
+      ['s_nanbei_d', '梁', '东魏'],
+      ['s_nanbei_d1', '梁', '北齐'],
+      ['s_nanbei_d2', '梁', '北齐'],
+      ['s_nanbei_d3', '梁', '北齐'],
+      ['s_nanbei_e', '陈', '北齐'],
+      ['s_nanbei_e2', '陈', '北齐'],
+      ['s_nanbei_f', '陈', '北周'],
+    ];
+
+    for (const [sk, southTitle, northTitle] of nanbeiSnaps) {
+      const snap = snapshots[sk];
+      assert(snap, `Missing snapshot: ${sk}`);
+      const sPol = snap.polities.find((p) => p.title === southTitle);
+      assert(sPol && sPol.shape, `${sk} must have Southern Dynasty polity ${southTitle} with valid shape`);
+      assert(
+        pointInShape(jiankang[0], jiankang[1], sPol.shape),
+        `${sk}: Jiankang ([118.801, 32.061]) must be inside Southern Dynasty (${southTitle})`
+      );
+      assert(
+        pointInShape(jingkou[0], jingkou[1], sPol.shape),
+        `${sk}: Jingkou ([119.451, 32.201]) must be inside Southern Dynasty (${southTitle})`
+      );
+      const nPol = snap.polities.find((p) => p.title === northTitle);
+      if (nPol && nPol.shape) {
+        assert(
+          !pointInShape(jiankang[0], jiankang[1], nPol.shape),
+          `${sk}: Jiankang must NOT be swallowed by Northern Dynasty (${northTitle})`
+        );
+        assert(
+          !pointInShape(jingkou[0], jingkou[1], nPol.shape),
+          `${sk}: Jingkou must NOT be swallowed by Northern Dynasty (${northTitle})`
+        );
+      }
+    }
+
+    // Capital periods & settlement verification for nanbei
+    const nbDyn = dynasties.find((d) => d.key === 'nanbei');
+    assert(nbDyn, 'Missing nanbei dynasty');
+    const findSt = (ancient) => (nbDyn.settlements || []).find((s) => s.ancient === ancient);
+
+    const jiankangNB = findSt('建康');
+    assert(jiankangNB && Array.isArray(jiankangNB.capitalPeriods), 'nanbei: 建康 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(jiankangNB.capitalPeriods),
+      JSON.stringify([[420, 552], [555, 589]]),
+      'nanbei: 建康 capitalPeriods must be [[420, 552], [555, 589]]'
+    );
+
+    const pingchengNB = findSt('平城');
+    assert(pingchengNB && Array.isArray(pingchengNB.capitalPeriods), 'nanbei: 平城 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(pingchengNB.capitalPeriods),
+      JSON.stringify([[420, 494]]),
+      'nanbei: 平城 capitalPeriods must be [[420, 494]]'
+    );
+
+    const luoyangNB = findSt('洛阳');
+    assert(luoyangNB && Array.isArray(luoyangNB.capitalPeriods), 'nanbei: 洛阳 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(luoyangNB.capitalPeriods),
+      JSON.stringify([[494, 534]]),
+      'nanbei: 洛阳 capitalPeriods must be [[494, 534]]'
+    );
+
+    const yeNB = findSt('邺');
+    assert(yeNB && Array.isArray(yeNB.capitalPeriods), 'nanbei: 邺 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(yeNB.capitalPeriods),
+      JSON.stringify([[534, 577]]),
+      'nanbei: 邺 capitalPeriods must be [[534, 577]]'
+    );
+
+    const changanNB = findSt('长安');
+    assert(changanNB && Array.isArray(changanNB.capitalPeriods), 'nanbei: 长安 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(changanNB.capitalPeriods),
+      JSON.stringify([[535, 581]]),
+      'nanbei: 长安 capitalPeriods must be [[535, 581]]'
+    );
+
+    const jianglingNB = findSt('江陵');
+    assert(jianglingNB && Array.isArray(jianglingNB.capitalPeriods), 'nanbei: 江陵 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(jianglingNB.capitalPeriods),
+      JSON.stringify([[552, 587]]),
+      'nanbei: 江陵 capitalPeriods must be [[552, 587]]'
+    );
+
+    const jinyangNB = findSt('晋阳');
+    assert(jinyangNB && Array.isArray(jinyangNB.capitalPeriods), 'nanbei: 晋阳 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(jinyangNB.capitalPeriods),
+      JSON.stringify([[534, 577]]),
+      'nanbei: 晋阳 capitalPeriods must be [[534, 577]]'
+    );
+
+    const tongwanNB = findSt('统万城');
+    assert(tongwanNB && Array.isArray(tongwanNB.capitalPeriods), 'nanbei: 统万城 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(tongwanNB.capitalPeriods),
+      JSON.stringify([[420, 427]]),
+      'nanbei: 统万城 capitalPeriods must be [[420, 427]]'
+    );
+
+    const guzangNB = findSt('姑臧（凉州）');
+    assert(guzangNB && Array.isArray(guzangNB.capitalPeriods), 'nanbei: 姑臧 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(guzangNB.capitalPeriods),
+      JSON.stringify([[420, 439]]),
+      'nanbei: 姑臧 capitalPeriods must be [[420, 439]]'
+    );
+
+    const longchengNB = findSt('龙城');
+    assert(longchengNB && Array.isArray(longchengNB.capitalPeriods), 'nanbei: 龙城 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(longchengNB.capitalPeriods),
+      JSON.stringify([[420, 436]]),
+      'nanbei: 龙城 capitalPeriods must be [[420, 436]]'
+    );
+
+    // Verify settlements added
+    assert(findSt('东阳（青州）'), 'nanbei: must include 东阳（青州）');
+    assert(findSt('钟离（凤阳）'), 'nanbei: must include 钟离（凤阳）');
+
+    // Verify 16 map change milestones
+    const expectedMapChanges = [420, 427, 431, 436, 439, 469, 479, 494, 502, 534, 550, 553, 554, 557, 573, 577];
+    const actualMapChanges = (nbDyn.milestones || []).filter((m) => m.isMapChange).map((m) => m.year);
+    assert.strictEqual(
+      JSON.stringify(actualMapChanges),
+      JSON.stringify(expectedMapChanges),
+      'nanbei: 16 map change milestone years must match'
+    );
+  }
+
+  // 23z. Sui Dynasty & Tang Dynasty (Zizhi Tongjian, Old/New Book of Tang & Tan Qixiang Vol 5)
+  {
+    const findDyn = (k) => dynasties.find((d) => d.key === k);
+    const suiDyn = findDyn('sui');
+    const tangDyn = findDyn('tang');
+    assert(suiDyn, 'Missing sui dynasty');
+    assert(tangDyn, 'Missing tang dynasty');
+
+    const findSt = (dyn, ancient) => (dyn.settlements || []).find((s) => s.ancient === ancient);
+
+    // Sui capitals & periods
+    const daxingSui = findSt(suiDyn, '大兴');
+    assert(daxingSui && Array.isArray(daxingSui.capitalPeriods), 'sui: 大兴 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(daxingSui.capitalPeriods), JSON.stringify([[581, 618]]), 'sui: 大兴 capitalPeriods must be [[581, 618]]');
+
+    const luoyangSui = findSt(suiDyn, '东都洛阳');
+    assert(luoyangSui && Array.isArray(luoyangSui.capitalPeriods), 'sui: 东都洛阳 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(luoyangSui.capitalPeriods), JSON.stringify([[605, 618]]), 'sui: 东都洛阳 capitalPeriods must be [[605, 618]]');
+
+    const jianglingSui = findSt(suiDyn, '江陵');
+    assert(jianglingSui && Array.isArray(jianglingSui.capitalPeriods), 'sui: 江陵 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(jianglingSui.capitalPeriods), JSON.stringify([[581, 587]]), 'sui: 江陵 capitalPeriods must be [[581, 587]]');
+
+    // Sui warlord settlements
+    for (const w of ['历阳（和县）', '金城（秦都）', '马邑（朔州）']) {
+      assert(findSt(suiDyn, w), `sui: must include late Sui warlord center ${w}`);
+    }
+
+    // Sui 5 map change milestones
+    const expectedSuiMapChanges = [581, 587, 589, 609, 618];
+    const actualSuiMapChanges = (suiDyn.milestones || []).filter((m) => m.isMapChange).map((m) => m.year);
+    assert.strictEqual(
+      JSON.stringify(actualSuiMapChanges),
+      JSON.stringify(expectedSuiMapChanges),
+      'sui: 5 map change milestone years must match'
+    );
+
+    // Tang capitals & periods
+    const changanTang = findSt(tangDyn, '长安');
+    assert(changanTang && Array.isArray(changanTang.capitalPeriods), 'tang: 长安 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(changanTang.capitalPeriods), JSON.stringify([[618, 904]]), 'tang: 长安 capitalPeriods must be [[618, 904]]');
+
+    const luoyangTang = findSt(tangDyn, '东都洛阳');
+    assert(luoyangTang && Array.isArray(luoyangTang.capitalPeriods), 'tang: 东都洛阳 must define capitalPeriods');
+    assert.strictEqual(
+      JSON.stringify(luoyangTang.capitalPeriods),
+      JSON.stringify([[690, 705], [904, 907]]),
+      'tang: 东都洛阳 capitalPeriods must be [[690, 705], [904, 907]]'
+    );
+
+    const taiyuanTang = findSt(tangDyn, '北都太原');
+    assert(taiyuanTang && Array.isArray(taiyuanTang.capitalPeriods), 'tang: 北都太原 must define capitalPeriods');
+    assert.strictEqual(JSON.stringify(taiyuanTang.capitalPeriods), JSON.stringify([[723, 907]]), 'tang: 北都太原 capitalPeriods must be [[723, 907]]');
+
+    // Tang Six Great Protectorates (六大都护府)
+    const sixProtectorates = [
+      '安西都护府（龟兹）',
+      '北庭都护府',
+      '安东都护府',
+      '安南都护府（交州）',
+      '单于大都护府（和林格尔）',
+      '安北都护府',
+    ];
+    for (const prot of sixProtectorates) {
+      assert(findSt(tangDyn, prot), `tang: must include Six Great Protectorate ${prot}`);
+    }
+
+    // Tang warlord settlements
+    for (const w of ['洺州（夏都）', '历阳（吴都）', '金城（兰州）']) {
+      assert(findSt(tangDyn, w), `tang: must include warlord settlement ${w}`);
+    }
+
+    // Tang 19 map change milestones
+    const expectedTangMapChanges = [618, 621, 630, 635, 640, 648, 657, 668, 676, 690, 702, 755, 757, 763, 764, 790, 848, 881, 907];
+    const actualTangMapChanges = (tangDyn.milestones || []).filter((m) => m.isMapChange).map((m) => m.year);
+    assert.strictEqual(
+      JSON.stringify(actualTangMapChanges),
+      JSON.stringify(expectedTangMapChanges),
+      'tang: 19 map change milestone years must match'
+    );
+
+    // Spatial checks: s_sui_d and s_tang_0 warlords
+    const suiD = snapshots.s_sui_d;
+    assert(suiD, 'Missing s_sui_d');
+    const findPol = (snap, title) => (snap.polities || []).find((p) => p.title === title);
+
+    const tangInSuiD = findPol(suiD, '唐（李渊）');
+    assert(tangInSuiD && pointInShape(108.941, 34.341, tangInSuiD.shape), 's_sui_d: Chang\'an must be inside 唐（李渊）');
+    assert(tangInSuiD && pointInShape(112.551, 37.871, tangInSuiD.shape), 's_sui_d: Taiyuan must be inside 唐（李渊）');
+
+    const weiInSuiD = findPol(suiD, '魏（李密）');
+    assert(weiInSuiD && pointInShape(112.451, 34.621, weiInSuiD.shape), 's_sui_d: Luoyang must be inside 魏（李密）');
+
+    const liangInSuiD = findPol(suiD, '梁（萧铣）');
+    assert(liangInSuiD && pointInShape(112.241, 30.331, liangInSuiD.shape), 's_sui_d: Jiangling must be inside 梁（萧铣）');
+
+    const tang0 = snapshots.s_tang_0;
+    assert(tang0, 'Missing s_tang_0');
+    const tangPol0 = findPol(tang0, '唐');
+    assert(tangPol0 && pointInShape(108.941, 34.341, tangPol0.shape), 's_tang_0: Chang\'an must be inside 唐');
+
+    const zhengInTang0 = findPol(tang0, '郑（王世充）');
+    assert(zhengInTang0 && pointInShape(112.451, 34.621, zhengInTang0.shape), 's_tang_0: Luoyang must be inside 郑（王世充）');
+
+    const xiaInTang0 = findPol(tang0, '夏（窦建德）');
+    assert(xiaInTang0 && pointInShape(116.12, 38.18, xiaInTang0.shape), 's_tang_0: Letou must be inside 夏（窦建德）');
+
+    const wuInTang0 = findPol(tang0, '吴（杜伏威）');
+    assert(wuInTang0 && pointInShape(119.411, 32.391, wuInTang0.shape), 's_tang_0: Jiangdu must be inside 吴（杜伏威）');
+
+    // High Tang s_tang_a5 core cities inside 唐
+    const tangA5 = snapshots.s_tang_a5;
+    assert(tangA5, 'Missing s_tang_a5');
+    const tangPolA5 = findPol(tangA5, '唐');
+    assert(tangPolA5, 's_tang_a5 must have 唐 polity');
+    for (const [cName, lng, lat] of [
+      ['长安', 108.941, 34.341],
+      ['洛阳', 112.451, 34.621],
+      ['太原', 112.551, 37.871],
+      ['成都', 104.071, 30.571],
+      ['广州', 113.261, 23.131],
+      ['扬州', 119.411, 32.391],
+    ]) {
+      assert(pointInShape(lng, lat, tangPolA5.shape), `s_tang_a5: ${cName} must be inside 唐`);
+    }
+  }
+
+  // 23aa. Mountain-range name labels (山川形胜): the twelve ranges that frame China's historical frontiers
+  {
+    const ranges = (sandbox.window.HYDRO_DATA.labels || []).filter((lb) => lb.kind === 'range');
+    const expectedRanges = ['秦岭', '大巴山', '太行山', '燕山', '阴山', '贺兰山', '祁连山', '天山', '昆仑山', '南岭', '武夷山', '大兴安岭'];
+    assert.strictEqual(
+      JSON.stringify(ranges.map((r) => r.zh).sort()),
+      JSON.stringify([...expectedRanges].sort()),
+      'HYDRO_DATA.labels must contain exactly the 12 curated mountain-range labels'
+    );
+    for (const r of ranges) {
+      assert(
+        typeof r.en === 'string' && r.en.length > 0 && !/[\u4e00-\u9fa5]/.test(r.en),
+        `Mountain range ${r.zh} must have a clean English name, got ${JSON.stringify(r.en)}`
+      );
+      assert(
+        Array.isArray(r.coord) && r.coord[0] > 73 && r.coord[0] < 135 && r.coord[1] > 18 && r.coord[1] < 54,
+        `Mountain range ${r.zh} label coord must sit inside China, got ${JSON.stringify(r.coord)}`
+      );
+      assert(Math.abs(r.rot || 0) <= 90, `Mountain range ${r.zh} rotation must stay readable (|rot| <= 90)`);
+    }
+  }
+
   // CUJ 26: Security (Reflected XSS Sanitization), EN inspect(), Person inspect(), Autoplay Mutual Exclusion & IME Guards
   {
     ctrl.locale = 'en';
@@ -3350,6 +3836,54 @@ function main() {
         !xssInspect.place.includes('<') &&
         !xssInspect.route[0].place.includes('<'),
       `Expected XSS angle brackets to be stripped from route place tokens, got ${JSON.stringify(xssInspect.place)}`
+    );
+
+    // Late Eastern Han & Three Kingdoms (Sanguozhi) territorial & capitalPeriods regression guards
+    const sanguoSpotChecks = [
+      [{ lng: 118.801, lat: 32.061, year: 229 }, '吴'], // Jianye
+      [{ lng: 119.451, lat: 32.201, year: 229 }, '吴'], // Jingkou
+      [{ lng: 112.121, lat: 32.011, year: 208 }, '曹操(北方)'], // Xiangyang post-208
+      [{ lng: 112.121, lat: 32.011, year: 229 }, '魏'], // Xiangyang in Three Kingdoms
+      [{ lng: 123.171, lat: 41.271, year: 196 }, '公孙氏(辽东)'], // Xiangping (Liaodong)
+      [{ lng: 113.261, lat: 23.131, year: 200 }, '士燮(交州)'], // Panyu (Jiaozhou) 189-210
+      [{ lng: 113.261, lat: 23.131, year: 211 }, '孙权(江东)'], // Panyu submits to Sun Quan 211
+      [{ lng: 103.82, lat: 36.06, year: 208 }, '马腾·韩遂(关陇)'], // Guanlong before Tong Pass
+      [{ lng: 103.82, lat: 36.06, year: 211 }, '曹操(北方)'], // Guanlong after Tong Pass (211)
+      [{ lng: 107.021, lat: 33.071, year: 200 }, '张鲁(汉中)'], // Nanzheng (Hanzhong) 196-214
+      [{ lng: 107.021, lat: 33.071, year: 215 }, '曹操(北方)'], // Hanzhong taken by Cao Cao (215)
+      [{ lng: 107.021, lat: 33.071, year: 219 }, '刘备(益州)'], // Hanzhong taken by Liu Bei (219)
+      [{ lng: 111.698, lat: 29.032, year: 215 }, '刘备(荆益)'], // Wuling west of Xiang River (215)
+      [{ lng: 112.941, lat: 28.231, year: 215 }, '孙权(江东)'], // Changsha east of Xiang River (215)
+    ];
+    for (const [opts, expPol] of sanguoSpotChecks) {
+      const info = ctrl.inspect(opts);
+      assert(
+        info && info.polity === expPol,
+        `Sanguozhi guard: inspect(${JSON.stringify(opts)}) expected polity "${expPol}", got ${JSON.stringify(info && info.polity)}`
+      );
+    }
+    const dhDyn = dynasties.find((d) => d.key === 'donghan');
+    const sgDyn = dynasties.find((d) => d.key === 'sanguo');
+    const dhLuoyang = dhDyn.settlements.find((s) => s.ancient === '洛阳');
+    const dhChangan = dhDyn.settlements.find((s) => s.ancient === '长安');
+    const dhXu = dhDyn.settlements.find((s) => s.ancient === '许');
+    assert(
+      ctrl._isSettlementCapital(dhLuoyang, 100) &&
+        !ctrl._isSettlementCapital(dhLuoyang, 196) &&
+        ctrl._isSettlementCapital(dhChangan, 192) &&
+        ctrl._isSettlementCapital(dhXu, 200),
+      'Expected donghan capitalPeriods to switch Luoyang (25-189) -> Chang\'an (190-195) -> Xu (196-220)'
+    );
+    const sgChengdu = sgDyn.settlements.find((s) => s.ancient === '成都');
+    const sgWuchang = sgDyn.settlements.find((s) => s.ancient === '武昌（鄂县）');
+    const sgJianye = sgDyn.settlements.find((s) => s.ancient === '建业');
+    assert(
+      ctrl._isSettlementCapital(sgChengdu, 234) &&
+        !ctrl._isSettlementCapital(sgChengdu, 265) &&
+        ctrl._isSettlementCapital(sgWuchang, 225) &&
+        !ctrl._isSettlementCapital(sgWuchang, 234) &&
+        ctrl._isSettlementCapital(sgJianye, 234),
+      'Expected sanguo capitalPeriods to reflect Chengdu (221-263), Wuchang (221-228, 265-266), and Jianye (229-280)'
     );
 
     sandbox.setInterval = setInterval;
@@ -4034,13 +4568,493 @@ function main() {
     assert.strictEqual(speedBtn.disabled, false, 'Unlocking Quiz mode must re-enable #act-play-speed');
   }
 
+  // CUJ 33: Qin & Western Han Historical Accuracy against 《史记》 and 《汉书》
+  {
+    const hasPt = (snapKey, polTitle, lng, lat) => {
+      const pol = snapshots[snapKey].polities.find((p) => p.title === polTitle);
+      return Boolean(pol && pointInShape(lng, lat, pol.shape));
+    };
+
+    // 1. 秦初三十六郡 (-221..-215 BCE): 南海郡 not yet founded; 番禺 & 桂林 in 南越; 肤施 & 陇西 in 秦; 九原 in 匈奴
+    assert(
+      !snapshots.s_qin_a.prefectures.some((p) => p.title === '南海郡') &&
+        !snapshots.s_qin_b.prefectures.some((p) => p.title === '南海郡') &&
+        snapshots.s_qin.prefectures.some((p) => p.title === '南海郡'),
+      '南海郡 must only appear in s_qin (-214 BCE) after Qin conquers Lingnan, restoring 36 commanderies in s_qin_a'
+    );
+    assert(
+      hasPt('s_qin_a', '南越', 113.261, 23.131) &&
+        hasPt('s_qin_a', '南越', 110.291, 25.271) &&
+        !hasPt('s_qin_a', '秦', 113.261, 23.131) &&
+        hasPt('s_qin_b', '南越', 113.261, 23.131) &&
+        hasPt('s_qin', '秦', 113.261, 23.131) &&
+        hasPt('s_qin', '秦', 110.291, 25.271),
+      'Lingnan (Panyu & Guilin) must belong to Nanyue in s_qin_a/s_qin_b (-221..-214 BCE) and Qin in s_qin (-214..-206 BCE)'
+    );
+    assert(
+      hasPt('s_qin_a', '秦', 110.261, 37.501) &&
+        hasPt('s_qin_a', '秦', 111.19, 40.27) &&
+        hasPt('s_qin_a', '秦', 103.861, 35.381) &&
+        hasPt('s_qin_a', '匈奴', 109.841, 40.661) &&
+        hasPt('s_qin_b', '秦', 109.841, 40.661),
+      's_qin_a must keep Fushi (Shangjun), Yunzhong, and Longxi inside Qin while Jiuyuan (Hetao) stays in Xiongnu until Meng Tian (-215 BCE, s_qin_b)'
+    );
+
+    // 2. 楚汉之争 (s_qin_chuhan, -206..-202 BCE): 三川郡、颍川郡、东郡、上郡、陇西 in 汉（刘邦）; 云中 in 赵 · 代; 九原 in 匈奴
+    assert(
+      hasPt('s_qin_chuhan', '汉（刘邦）', 112.451, 34.621) &&
+        hasPt('s_qin_chuhan', '汉（刘邦）', 113.38, 34.79) &&
+        hasPt('s_qin_chuhan', '汉（刘邦）', 113.471, 34.151) &&
+        hasPt('s_qin_chuhan', '汉（刘邦）', 114.311, 34.801) &&
+        hasPt('s_qin_chuhan', '汉（刘邦）', 115.03, 35.76) &&
+        hasPt('s_qin_chuhan', '汉（刘邦）', 110.261, 37.501) &&
+        hasPt('s_qin_chuhan', '汉（刘邦）', 103.861, 35.381) &&
+        hasPt('s_qin_chuhan', '赵 · 代', 111.19, 40.27) &&
+        hasPt('s_qin_chuhan', '匈奴', 109.841, 40.661) &&
+        hasPt('s_qin_chuhan', '闽越', 120.66, 28.01) &&
+        hasPt('s_qin_chuhan', '南越（赵佗）', 105.851, 21.031),
+      's_qin_chuhan must cover Sanchuan (Luoyang, Xingyang), Yingchuan (Yangzhai), Dongjun (Daliang, Puyang), Shangjun (Fushi), Longxi, Yunzhong, Jiuyuan, Dongou, and Jiaozhi'
+    );
+
+    // 3. 西汉初 (s_xihan_a, -202..-128 BCE) & 汉武帝北伐南征: 河南地 (朔方) in 匈奴 until -127 BCE; 五岭之南 in 南越 until -111 BCE
+    assert(
+      hasPt('s_xihan_a', '汉（郡国并行）', 110.261, 37.501) &&
+        hasPt('s_xihan_a', '汉（郡国并行）', 111.19, 40.27) &&
+        hasPt('s_xihan_a', '汉（郡国并行）', 103.861, 35.381) &&
+        hasPt('s_xihan_a', '匈奴', 107.401, 40.751) &&
+        hasPt('s_xihan_b1', '汉', 107.401, 40.751),
+      's_xihan_a must keep Fushi, Yunzhong, and Longxi in Han while Shuofang (Hetao) stays in Xiongnu until Wei Qing (-127 BCE, s_xihan_b1)'
+    );
+    assert(
+      hasPt('s_xihan_a', '南越', 113.261, 23.131) &&
+        hasPt('s_xihan_a', '南越', 111.28, 23.48) &&
+        hasPt('s_xihan_a', '南越', 109.416, 24.326) &&
+        hasPt('s_xihan_b2', '南越', 113.261, 23.131) &&
+        hasPt('s_xihan_b3', '汉', 113.261, 23.131) &&
+        hasPt('s_xihan_b3', '汉', 111.28, 23.48),
+      'Panyu, Guangxin (Cangwu), and Tanzhong (Yulin) must stay in Nanyue until -111 BCE (s_xihan_b3)'
+    );
+
+    // 4. 西域都护府 (-60 BCE, s_xihan_c) vs 西域诸国 (-111..-61 BCE, s_xihan_b3/s_xihan_b); 乐浪郡 (-108 BCE); 敦煌 & 居延
+    assert(
+      !snapshots.s_xihan_b3.polities.some((p) => p.title === '西域都护府') &&
+        !snapshots.s_xihan_b.polities.some((p) => p.title === '西域都护府') &&
+        snapshots.s_xihan_b3.polities.some((p) => p.title === '西域诸国' && p.role === 'neighbor') &&
+        snapshots.s_xihan_b.polities.some((p) => p.title === '西域诸国' && p.role === 'neighbor') &&
+        snapshots.s_xihan_c.polities.some((p) => p.title === '西域都护府' && p.role === 'protectorate'),
+      'Protectorate of the Western Regions (西域都护府) must not appear before -60 BCE (s_xihan_c)'
+    );
+    assert(
+      !hasPt('s_xihan_b3', '汉', 125.751, 39.031) &&
+        hasPt('s_xihan_b', '汉', 125.751, 39.031) &&
+        hasPt('s_xihan_c', '汉', 125.751, 39.031) &&
+        hasPt('s_xihan_d', '新（王莽）', 125.751, 39.031) &&
+        hasPt('s_xihan_b2', '汉', 94.661, 40.141) &&
+        hasPt('s_xihan_b', '汉', 94.661, 40.141) &&
+        hasPt('s_xihan_b', '汉', 101.06, 41.95) &&
+        hasPt('s_xihan_c', '汉', 101.06, 41.95),
+      'Lelang Commandery (-108 BCE), Dunhuang, and Juyan must lie inside Han/Xin polygons'
+    );
+  }
+
+  // CUJ 34: Traditional Chinese (zh-tw) Runtime Conversion, Historical Polysemy Protection & Bidirectional Search
+  {
+    const conv = sandbox.window.ZH_HANT_CONV;
+    assert(conv && typeof conv.toHant === 'function' && typeof conv.toHans === 'function', 'window.ZH_HANT_CONV must be loaded');
+    const polysemyPairs = [
+      ['咸阳', '咸陽'],
+      ['并州刺史', '并州刺史'],
+      ['九州合并', '九州合併'],
+      ['台州与天台山', '台州與天台山'],
+      ['台湾台北', '臺灣臺北'],
+      ['余姚与余杭', '餘姚與餘杭'],
+      ['范仲淹在范阳郡', '范仲淹在范陽郡'],
+      ['钟山与钟繇', '鍾山與鍾繇'],
+      ['吕后、韦后与皇太后', '呂后、韋后與皇太后'],
+      ['后汉与后周', '後漢與後周'],
+      ['诸葛亮北伐与远征', '諸葛亮北伐與遠征'],
+      ['魏征进谏', '魏徵進諫'],
+      ['庆历新政与万历', '慶曆新政與萬曆'],
+      ['中国历史历代', '中國歷史歷代'],
+      ['匈奴单于与于阗、于谦', '匈奴單于與于闐、于謙'],
+      ['陆游与游牧民族', '陸游與游牧民族'],
+      ['岳飞与五岳', '岳飛與五嶽'],
+      ['秃发乌孤与剃发易服', '禿髮烏孤與剃髮易服'],
+      ['韩侂胄与甲胄', '韓侂冑與甲冑'],
+      ['党项羌', '党項羌'],
+    ];
+    for (const [hans, expectedHant] of polysemyPairs) {
+      const actual = conv.toHant(hans);
+      assert.strictEqual(
+        actual,
+        expectedHant,
+        `ZH_HANT_CONV.toHant("${hans}") expected "${expectedHant}", got "${actual}"`
+      );
+      assert.strictEqual(
+        conv.toHant(actual),
+        expectedHant,
+        `ZH_HANT_CONV.toHant must be idempotent on "${actual}"`
+      );
+    }
+
+    const prevLocale = ctrl.locale;
+    ctrl.locale = 'zh-tw';
+    const tangInsp = ctrl.inspect({ year: 741, place: '長安' });
+    assert(
+      tangInsp &&
+        tangInsp.era === '唐玄宗·開元二十九年' &&
+        tangInsp.dynasty.title === '唐' &&
+        tangInsp.resolvedName === '長安' &&
+        tangInsp.polity === '唐' &&
+        tangInsp.regions.includes('關內道') &&
+        tangInsp.modernProvince === '陝西省' &&
+        tangInsp.nearestCity &&
+        tangInsp.nearestCity.remark === '唐都，百萬人口國際都會' &&
+        tangInsp.url.includes('lang=zh-tw'),
+      `Expected Traditional Chinese inspect payload for 741 長安, got ${JSON.stringify(tangInsp)}`
+    );
+
+    // Traditional Chinese search & resolvePlace must work in any UI locale
+    for (const loc of ['zh', 'zh-tw', 'en']) {
+      ctrl.locale = loc;
+      const rChangAn = ctrl.resolvePlace('長安', 741);
+      const rXianYang = ctrl.resolvePlace('咸陽', -221);
+      const rTongGuan = ctrl.resolvePlace('潼關', 756);
+      assert(
+        rChangAn && rChangAn.name === '长安' && rXianYang && rXianYang.name === '咸阳' && rTongGuan && rTongGuan.name === '潼关',
+        `Expected Traditional place resolution to succeed in locale=${loc}`
+      );
+      const qSuShi = ctrl._queryQuickSearch('蘇軾');
+      const qQingLi = ctrl._queryQuickSearch('慶曆四年');
+      assert(
+        qSuShi.length > 0 && qSuShi[0].personKey === 'sushi' && qQingLi.length > 0 && qQingLi[0].year === 1044,
+        `Expected Traditional quick search for 蘇軾 and 慶曆四年 to succeed in locale=${loc}`
+      );
+    }
+    ctrl.locale = prevLocale;
+  }
+
+  // CUJ 35: Yuan Dynasty Historical Accuracy against 《元史》 (History of Yuan)
+  {
+    const hasPolPt = (snapKey, polTitle, lng, lat) => {
+      const pol = snapshots[snapKey].polities.find((p) => p.title === polTitle);
+      return Boolean(pol && pointInShape(lng, lat, pol.shape));
+    };
+    const hasRegPt = (snapKey, regTitle, lng, lat) => {
+      const reg = (snapshots[snapKey].regions || []).find((r) => r.title === regTitle);
+      return Boolean(reg && pointInShape(lng, lat, reg.shape));
+    };
+    const hasPrefPt = (snapKey, prefTitle, lng, lat) => {
+      const pref = (snapshots[snapKey].prefectures || []).find((p) => p.title === prefTitle);
+      return Boolean(pref && pointInShape(lng, lat, pref.shape));
+    };
+
+    // 1. Northwest frontier: Beshbalik ([89.181, 44.001]) & Qocho ([89.53, 42.85]) inside Yuan (not Chagatai)
+    for (const sk of ['s_yuan_a', 's_yuan', 's_yuan_b', 's_yuan_c']) {
+      assert(
+        hasPolPt(sk, '元', 89.181, 44.001) &&
+          hasPolPt(sk, '元', 89.53, 42.85) &&
+          !hasPolPt(sk, '察合台汗国', 89.181, 44.001) &&
+          !hasPolPt(sk, '察合台汗国', 89.53, 42.85) &&
+          hasRegPt(sk, '北庭都护府', 89.181, 44.001) &&
+          hasRegPt(sk, '北庭都护府', 89.53, 42.85) &&
+          hasRegPt(sk, '征东行省', 126.55, 37.97),
+        `${sk} must place Beshbalik and Qocho inside Yuan / Beiting Protectorate and Kaesong inside Zhengdong Province`
+      );
+    }
+
+    // 2. 《元史·地理志》 provincial boundaries: Jiqing & Hangzhou in 江浙行省, Kaizhou in 中书省（腹里）, Shanzhou in 河南江北行省, Xiningzhou in 甘肃行省, Hainan in 湖广行省
+    for (const sk of ['s_yuan_a', 's_yuan', 's_yuan_b', 's_yuan_c']) {
+      assert(
+        hasRegPt(sk, '江浙行省', 118.801, 32.061) &&
+          !hasRegPt(sk, '河南江北行省', 118.801, 32.061) &&
+          hasRegPt(sk, '河南江北行省', 118.317, 32.301) &&
+          hasRegPt(sk, '江浙行省', 120.151, 30.271) &&
+          hasRegPt(sk, '中书省（腹里）', 115.03, 35.76) &&
+          !hasRegPt(sk, '河南江北行省', 115.03, 35.76) &&
+          hasRegPt(sk, '河南江北行省', 111.17, 34.78) &&
+          !hasRegPt(sk, '中书省（腹里）', 111.17, 34.78) &&
+          hasRegPt(sk, '甘肃行省', 101.78, 36.62) &&
+          hasRegPt(sk, '湖广行省', 109.577, 19.521) &&
+          hasRegPt(sk, '湖广行省', 109.18, 18.36),
+        `${sk} regions must align Jiqing, Hangzhou, Kaizhou, Shanzhou, Xiningzhou, and Hainan with History of Yuan Geography Treatise`
+      );
+    }
+
+    // 3. Circuit (路) chronology between s_yuan_a (1279–1288) and s_yuan (1288–1351) + restored frontier circuits
+    assert(
+      hasPrefPt('s_yuan_a', '安西路', 108.941, 34.341) &&
+        hasPrefPt('s_yuan_a', '鄂州路', 114.311, 30.551) &&
+        hasPrefPt('s_yuan_a', '太原路', 112.551, 37.871) &&
+        hasPrefPt('s_yuan_a', '建康路', 118.801, 32.061) &&
+        hasPrefPt('s_yuan_a', '潭州路', 112.971, 28.201) &&
+        hasPrefPt('s_yuan_a', '南剑路', 118.18, 26.64) &&
+        hasPrefPt('s_yuan', '奉元路', 108.941, 34.341) &&
+        hasPrefPt('s_yuan', '武昌路', 114.311, 30.551) &&
+        hasPrefPt('s_yuan', '冀宁路', 112.551, 37.871) &&
+        hasPrefPt('s_yuan', '集庆路', 118.801, 32.061) &&
+        hasPrefPt('s_yuan', '天临路', 112.971, 28.201) &&
+        hasPrefPt('s_yuan', '延平路', 118.18, 26.64) &&
+        hasPrefPt('s_yuan', '辽阳路', 123.241, 41.271) &&
+        hasPrefPt('s_yuan', '大宁路', 121.13, 41.1) &&
+        hasPrefPt('s_yuan', '和林路', 102.851, 47.201) &&
+        hasPrefPt('s_yuan', '亦集乃路', 101.14, 41.76) &&
+        hasPrefPt('s_yuan', '播州宣慰司', 106.93, 27.72) &&
+        hasPrefPt('s_yuan', '泉州路', 118.681, 24.871) &&
+        hasPrefPt('s_yuan', '汀州路', 117.02, 25.08),
+      's_yuan_a and s_yuan prefectures must reflect pre-1301 vs post-1301 circuit renamings and cover frontier circuits'
+    );
+
+    // 4. Late Yuan Red Turban & warlord territories in s_yuan_b (1351–1363) and s_yuan_c (1363–1368)
+    assert(
+      hasPolPt('s_yuan_b', '宋（韩林儿）', 115.78, 33.87) &&
+        hasPolPt('s_yuan_b', '宋（韩林儿）', 115.801, 32.901) &&
+        hasPolPt('s_yuan_b', '宋（韩林儿）', 116.964, 33.647) &&
+        hasPolPt('s_yuan_b', '宋（韩林儿）', 116.78, 32.58) &&
+        hasPolPt('s_yuan_b', '宋（韩林儿）', 114.311, 34.801) &&
+        hasPolPt('s_yuan_b', '周（张士诚）', 120.62, 31.3) &&
+        hasPolPt('s_yuan_b', '周（张士诚）', 119.45, 32.78) &&
+        hasPolPt('s_yuan_b', '周（张士诚）', 120.087, 30.894) &&
+        hasPolPt('s_yuan_b', '周（张士诚）', 120.151, 30.271) &&
+        hasPolPt('s_yuan_b', '吴（朱元璋）', 118.801, 32.061) &&
+        hasPolPt('s_yuan_b', '吴（朱元璋）', 118.317, 32.301) &&
+        hasPolPt('s_yuan_b', '吴（朱元璋）', 118.497, 31.571) &&
+        hasPolPt('s_yuan_b', '吴（朱元璋）', 119.92, 28.45) &&
+        hasPolPt('s_yuan_b', '方国珍', 121.55, 29.87) &&
+        hasPolPt('s_yuan_b', '方国珍', 120.66, 28.01) &&
+        hasPolPt('s_yuan_b', '天完 · 陈友谅', 114.311, 30.551) &&
+        hasPolPt('s_yuan_b', '天完 · 陈友谅', 115.891, 28.681),
+      's_yuan_b must accurately partition Song (Han Lin\'er), Zhou (Zhang Shicheng), Wu (Zhu Yuanzhang), Fang Guozhen, and Tianwan/Chen Youliang'
+    );
+    assert(
+      hasPolPt('s_yuan_c', '吴（朱元璋）', 118.801, 32.061) &&
+        hasPolPt('s_yuan_c', '吴（朱元璋）', 114.311, 30.551) &&
+        hasPolPt('s_yuan_c', '吴（朱元璋）', 115.891, 28.681) &&
+        hasPolPt('s_yuan_c', '吴（朱元璋）', 116.78, 32.58) &&
+        hasPolPt('s_yuan_c', '周（张士诚）', 120.62, 31.3) &&
+        hasPolPt('s_yuan_c', '方国珍', 121.55, 29.87) &&
+        hasPolPt('s_yuan_c', '陈友定', 119.3, 26.08) &&
+        hasPolPt('s_yuan_c', '陈友定', 118.681, 24.871) &&
+        !hasPolPt('s_yuan_c', '陈友定', 113.261, 23.131) &&
+        !hasPolPt('s_yuan_c', '陈友定', 110.291, 25.271) &&
+        hasPolPt('s_yuan_c', '元', 113.261, 23.131) &&
+        hasPolPt('s_yuan_c', '元', 110.291, 25.271) &&
+        hasPolPt('s_yuan_c', '元', 109.577, 19.521),
+      's_yuan_c must keep Zhou (Zhang Shicheng) and Fang Guozhen until 1367 and restrict Chen Youding strictly to Fujian while Guangdong/Guangxi/Hainan stay in Yuan'
+    );
+
+    // 5. Mongol Empire & Western Liao / Yuan interior continuity (zero Lop Nor / Qilian hollow cavities or vertical keyhole cuts)
+    assert(
+      hasPolPt('s_nansong_a0', '西辽', 90.5, 40.2) &&
+        hasPolPt('s_nansong_a', '西辽', 90.5, 40.2) &&
+        hasPolPt('s_nansong_b0', '西辽', 90.5, 40.2) &&
+        hasPolPt('s_nansong_c', '大蒙古国', 90.5, 40.2) &&
+        hasPolPt('s_nansong_c', '大蒙古国', 86.0, 40.0) &&
+        hasPolPt('s_nansong_d', '大蒙古国', 90.5, 40.2) &&
+        hasPolPt('s_nansong_d', '大蒙古国', 86.0, 40.0) &&
+        hasPolPt('s_nansong_e', '大蒙古国', 90.5, 40.2) &&
+        hasPolPt('s_nansong_e', '大蒙古国', 86.0, 40.0) &&
+        hasPolPt('s_nansong_e', '大蒙古国', 100.0, 38.0) &&
+        hasPolPt('s_nansong_b', '大蒙古国', 90.5, 40.2) &&
+        hasPolPt('s_nansong_b', '大蒙古国', 100.16, 25.69) &&
+        snapshots.s_nansong_b.polities.find((p) => p.title === '大蒙古国').shape.coordinates.length === 1 &&
+        hasPolPt('s_nansong_g', '元', 100.0, 28.0) &&
+        hasPolPt('s_yuan_b', '元', 90.5, 40.2) &&
+        hasPolPt('s_yuan_c', '元', 90.5, 40.2),
+      'Mongol Empire, Western Liao, and Yuan snapshots must have zero hollow interior cavities at Lop Nor [90.5, 40.2], Eastern Tarim [86, 40], Qilian [100, 38], or Hengduan [100, 28]'
+    );
+  }
+
+  // CUJ 36: Northern & Southern Song Historical Accuracy against 《宋史》《辽史》《金史》
+  {
+    const hasPolPt = (snapKey, polTitle, lng, lat) => {
+      const pol = snapshots[snapKey].polities.find((p) => p.title === polTitle);
+      return Boolean(pol && pointInShape(lng, lat, pol.shape));
+    };
+    const hasRegPt = (snapKey, regTitle, lng, lat) => {
+      const reg = (snapshots[snapKey].regions || []).find((r) => r.title === regTitle);
+      return Boolean(reg && pointInShape(lng, lat, reg.shape));
+    };
+    const hasPrefPt = (snapKey, prefTitle, lng, lat) => {
+      const pref = (snapshots[snapKey].prefectures || []).find((p) => p.title === prefTitle);
+      return Boolean(pref && pointInShape(lng, lat, pref.shape));
+    };
+
+    // 1. Ten Kingdoms unification chronology (960–979): Jingnan vs Wuping (960–963), Southern Tang vs Wuyue vs Qingyuanjun in Fujian (960–978)
+    assert(
+      !snapshots.s_beisong_a0.polities.some((p) => p.title === '湖南') &&
+        hasPolPt('s_beisong_a0', '荆南（南平）', 112.241, 30.331) &&
+        hasPolPt('s_beisong_a0', '武平（湖南）', 112.941, 28.231) &&
+        hasPolPt('s_beisong_a0', '武平（湖南）', 111.698, 29.032) &&
+        hasPolPt('s_beisong_a', '宋', 112.241, 30.331) &&
+        hasPolPt('s_beisong_a', '宋', 112.941, 28.231),
+      's_beisong_a0 (960–963) must distinguish Jingnan (Jiangling) and Wuping (Tanzhou/Langzhou) before the 963 Jinghu campaign'
+    );
+    for (const sk of ['s_beisong_a0', 's_beisong_a', 's_beisong_a2', 's_beisong_a3']) {
+      assert(
+        hasPolPt(sk, '南唐', 118.32, 27.04) &&
+          hasPolPt(sk, '南唐', 116.35, 25.84) &&
+          !hasPolPt(sk, '吴越', 118.32, 27.04) &&
+          hasPolPt(sk, '吴越', 119.301, 26.081) &&
+          hasPolPt(sk, '吴越', 120.151, 30.271) &&
+          hasPolPt(sk, '清源军', 118.681, 24.871) &&
+          hasPolPt(sk, '清源军', 117.65, 24.51),
+        `${sk} (960–975) must place Jianzhou & Tingzhou in Southern Tang, Fuzhou & Hangzhou in Wuyue, and Quanzhou & Zhangzhou in Qingyuanjun`
+      );
+    }
+    assert(
+      hasPolPt('s_beisong_a4', '宋', 118.32, 27.04) &&
+        hasPolPt('s_beisong_a4', '宋', 116.35, 25.84) &&
+        hasPolPt('s_beisong_a4', '吴越', 119.301, 26.081) &&
+        hasPolPt('s_beisong_a4', '清源军', 118.681, 24.871) &&
+        hasPolPt('s_beisong_a5', '宋', 119.301, 26.081) &&
+        hasPolPt('s_beisong_a5', '宋', 120.151, 30.271) &&
+        hasPolPt('s_beisong_a5', '宋', 118.681, 24.871),
+      's_beisong_a4 (975–978) must keep Qingyuanjun and Wuyue independent after Southern Tang falls, and s_beisong_a5 (978–979) must annex both into Song'
+    );
+
+    // 2. Song–Liao & Northern Han border (Sixteen Prefectures of Yanyun: Shuozhou, Yingzhou, Daizhou, Yizhou, Bazhou)
+    for (const sk of ['s_beisong_a0', 's_beisong_a', 's_beisong_a2', 's_beisong_a3', 's_beisong_a4', 's_beisong_a5']) {
+      assert(
+        hasPolPt(sk, '北汉', 112.96, 39.07) &&
+          hasPolPt(sk, '北汉', 112.551, 37.871) &&
+          hasPolPt(sk, '辽', 112.43, 39.33) &&
+          hasPolPt(sk, '辽', 113.19, 39.55) &&
+          hasPolPt(sk, '宋', 115.49, 39.35) &&
+          hasPolPt(sk, '宋', 116.39, 39.12),
+        `${sk} (960–979) must place Daizhou & Taiyuan in Northern Han, Shuozhou & Yingzhou in Liao, and Yizhou & Bazhou in Song`
+      );
+    }
+    for (const sk of ['s_beisong_b0', 's_beisong_b', 's_beisong_b1', 's_beisong_b2', 's_beisong_c']) {
+      assert(
+        hasPolPt(sk, '宋', 112.96, 39.07) &&
+          hasPolPt(sk, '宋', 116.39, 39.12) &&
+          hasPolPt(sk, '辽', 112.43, 39.33) &&
+          hasPolPt(sk, '辽', 113.19, 39.55) &&
+          hasPolPt(sk, '辽', 115.49, 39.35),
+        `${sk} (979–1125) must place Daizhou & Bazhou in Song and Shuozhou, Yingzhou, & Yizhou in Liao`
+      );
+    }
+
+    // 3. Dingnan Jiedushi / Lingzhou (1002) & Xihe (1072) / Hehuang (1104) expansions + Qilian Mountain seam
+    for (const sk of ['s_beisong_a0', 's_beisong_a', 's_beisong_a2', 's_beisong_a3', 's_beisong_a4', 's_beisong_a5']) {
+      assert(
+        hasPolPt(sk, '宋', 106.28, 38.09) &&
+          hasPolPt(sk, '党项（定难军）', 108.78, 37.98) &&
+          !hasPolPt(sk, '党项（定难军）', 106.28, 38.09),
+        `${sk} (960–979) must keep Lingzhou inside Song and Xiazhou inside Dingnan Jiedushi`
+      );
+    }
+    assert(
+      hasPolPt('s_beisong_b0', '党项（定难军）', 106.28, 38.09) &&
+        hasPolPt('s_beisong_b0', '党项（定难军）', 106.231, 38.491) &&
+        hasPolPt('s_beisong_b', '吐蕃诸部', 103.861, 35.381) &&
+        hasPolPt('s_beisong_b', '吐蕃诸部', 101.778, 36.617) &&
+        hasPolPt('s_beisong_b1', '宋', 103.861, 35.381) &&
+        hasPolPt('s_beisong_b1', '宋', 103.21, 35.6) &&
+        hasPolPt('s_beisong_b1', '宋', 104.04, 34.43) &&
+        hasPolPt('s_beisong_b1', '宋', 103.83, 36.06) &&
+        !hasPolPt('s_beisong_b1', '吐蕃诸部', 103.861, 35.381) &&
+        hasPolPt('s_beisong_b1', '吐蕃诸部', 101.778, 36.617),
+      's_beisong_b0..b1 must reflect Li Jiqian capturing Lingzhou (1002) and Wang Shao recovering Xihe (Xizhou/Hezhou/Minzhou/Lanzhou) in 1072'
+    );
+    for (const sk of ['s_beisong_b2', 's_beisong_c', 's_beisong_d']) {
+      assert(
+        hasPolPt(sk, '宋', 101.778, 36.617) &&
+          !hasPolPt(sk, '吐蕃诸部', 101.778, 36.617) &&
+          hasRegPt(sk, '熙河路', 101.778, 36.617),
+        `${sk} (1104–1127) must place Xiningzhou (Qingtang) inside Song and Xihe Circuit after the 1104 Hehuang Expansion`
+      );
+    }
+
+    // 4. Late Northern Song (s_beisong_d), Hainan Island circuit (广南西路), and full-phase simplified prefectures
+    assert(
+      hasPolPt('s_beisong_d', '西辽', 81.28, 43.92) &&
+        snapshots.s_beisong_d.regions.some((r) => r.title === '上京路') &&
+        snapshots.s_beisong_d.regions.some((r) => r.title === '燕京路') &&
+        !snapshots.s_beisong_d.regions.some((r) => r.title.endsWith('道')),
+      's_beisong_d (1125–1127) must include Western Liao and rename former Liao circuits from 道 to Jin 路'
+    );
+    for (const sk of ['s_beisong_a3', 's_beisong_a4', 's_beisong_a5', 's_beisong_b0', 's_beisong_b', 's_beisong_b1', 's_beisong_b2', 's_beisong_c', 's_beisong_d', 's_nansong_a0', 's_nansong_a', 's_nansong_b0', 's_nansong_c', 's_nansong_d', 's_nansong_e', 's_nansong_b', 's_nansong_g']) {
+      assert(
+        hasRegPt(sk, '广南西路', 109.577, 19.521),
+        `${sk} must include Hainan Island ([109.577, 19.521]) inside 广南西路`
+      );
+    }
+    for (const sk of ['s_beisong_a0', 's_beisong_a', 's_beisong_a2', 's_beisong_a3', 's_beisong_a4', 's_beisong_a5', 's_beisong_b0', 's_beisong_b', 's_beisong_b1', 's_beisong_b2', 's_beisong_c', 's_beisong_d', 's_nansong_a0', 's_nansong_a', 's_nansong_b0', 's_nansong_c', 's_nansong_d', 's_nansong_e', 's_nansong_b', 's_nansong_g']) {
+      const prefs = snapshots[sk].prefectures || [];
+      assert(
+        prefs.length >= 130 &&
+          !prefs.some((p) => p.title.endsWith('道') || p.title === '倒塌岭节度使司' || p.title === '西北路') &&
+          hasPrefPt(sk, '开封府', 114.351, 34.791) &&
+          hasPrefPt(sk, '成都府', 104.061, 30.671),
+        `${sk} prefectures must be populated (>=130), free of macro-circuits, and include Kaifengfu & Chengdufu`
+      );
+    }
+
+    // 5. Southern Song (1127–1279): Treaty of Shaoxing border (Qinzhou, Fengzhou, Chengzhou, Jiezhou, Junzhou), Lintao exclusivity, and Jin capital chronology
+    assert(
+      snapshots.s_nansong_c.polities.find((p) => p.title === '大蒙古国').shape.coordinates.length === 1 &&
+        hasPolPt('s_nansong_c', '金（迁都汴京）', 103.861, 35.381) &&
+        hasPolPt('s_nansong_c', '金（迁都汴京）', 103.83, 36.06),
+      's_nansong_c (1215–1227) must keep Lintao Circuit (Lintaofu & Lanzhou) inside Jin rather than a disconnected Mongol exclave'
+    );
+    for (const sk of ['s_nansong_a0', 's_nansong_a', 's_nansong_b0', 's_nansong_c', 's_nansong_d']) {
+      assert(
+        !hasPolPt(sk, '吐蕃诸部', 103.861, 35.381) && !hasPolPt(sk, '吐蕃诸部', 103.83, 36.06),
+        `${sk} must not overlap 吐蕃诸部 onto Lintaofu or Lanzhou`
+      );
+    }
+    assert(
+      hasPolPt('s_nansong_a0', '南宋', 105.721, 34.581) &&
+        hasRegPt('s_nansong_a0', '利州路', 105.721, 34.581) &&
+        snapshots.s_nansong_a0.regions.some((r) => r.title === '燕京路') &&
+        !snapshots.s_nansong_a0.regions.some((r) => r.title === '中都路') &&
+        hasPrefPt('s_nansong_a0', '析津府', 116.401, 39.901),
+      's_nansong_a0 (1127–1141, pre-Shaoxing Treaty & pre-1153 Zhongdu) must keep Qinzhou in Southern Song / Lizhou Circuit and name Beijing as Yanjing Circuit / Xijinfu'
+    );
+    for (const [sk, northPol] of [
+      ['s_nansong_a', '金'],
+      ['s_nansong_b0', '金'],
+      ['s_nansong_c', '金（迁都汴京）'],
+      ['s_nansong_d', '大蒙古国'],
+      ['s_nansong_e', '大蒙古国'],
+      ['s_nansong_b', '大蒙古国'],
+    ]) {
+      assert(
+        hasPolPt(sk, northPol, 105.721, 34.581) &&
+          hasPolPt(sk, northPol, 106.96, 34.28) &&
+          !hasPolPt(sk, '南宋', 105.721, 34.581) &&
+          hasPolPt(sk, '南宋', 106.52, 33.91) &&
+          hasPolPt(sk, '南宋', 105.73, 33.74) &&
+          hasPolPt(sk, '南宋', 104.92, 33.4) &&
+          hasPolPt(sk, '南宋', 104.04, 34.43) &&
+          hasPolPt(sk, '南宋', 111.51, 32.65) &&
+          hasRegPt(sk, '凤翔路', 105.721, 34.581) &&
+          hasRegPt(sk, '利州路', 106.52, 33.91) &&
+          hasRegPt(sk, '利州路', 105.73, 33.74) &&
+          hasRegPt(sk, '利州路', 104.92, 33.4),
+        `${sk} (post-1142 Treaty of Shaoxing) must place Qinzhou & Dasanguan in ${northPol} / Fengxiang Circuit and Fengzhou, Chengzhou, Jiezhou, Minzhou, & Junzhou in Southern Song / Lizhou Circuit`
+      );
+    }
+    for (const sk of ['s_nansong_e', 's_nansong_b']) {
+      assert(
+        snapshots[sk].regions.some((r) => r.title === '辽东路') &&
+          snapshots[sk].regions.some((r) => r.title === '燕京路') &&
+          snapshots[sk].regions.some((r) => r.title === '河南路') &&
+          !snapshots[sk].regions.some((r) => r.title === '上京路' || r.title === '中都路' || r.title === '南京（河南）路'),
+        `${sk} (post-1234 fall of Jin) must replace Jin imperial circuits with Mongol circuits (辽东路, 燕京路, 河南路)`
+      );
+    }
+  }
+
   const elapsed = (performance.now() - t0).toFixed(1);
   console.log(`✓ Jiangshan Atlas validation passed in ${elapsed} ms:`);
   console.log(`  - ${dynasties.length} dynasties, ${snapKeys.length} snapshots (${referencedSnaps.size} phase-linked), ${sweptYears} timeline years swept`);
   console.log(`  - ${decodedPolygons} historical polygons (${totalVertices.toLocaleString()} vertices) verified lossless & collision-free`);
   console.log(`  - ${provinces.length} modern provinces (${provRingCount} rings)`);
   console.log(`  - ${totalSettlements} ancient settlements & ${totalMilestones} historical milestones`);
-  console.log(`  - ${loreData.HISTORICAL_JOURNEYS.length} journeys (${totalJourneyStops} bilingual stops), ${loreData.CHINESE_ERA_SPANS.length} era spans, ${loreData.PLACE_LANDMARK_EVENTS.length} landmark events & ${loreData.PLACE_GAZETTEER.length} gazetteer landmarks verified across 32 E2E CUJs`);
+  console.log(`  - ${loreData.HISTORICAL_JOURNEYS.length} journeys (${totalJourneyStops} bilingual stops), ${loreData.CHINESE_ERA_SPANS.length} era spans, ${loreData.PLACE_LANDMARK_EVENTS.length} landmark events & ${loreData.PLACE_GAZETTEER.length} gazetteer landmarks verified across 36 E2E CUJs`);
 }
 
 main();

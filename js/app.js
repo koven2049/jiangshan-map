@@ -272,8 +272,13 @@
       this.maxYear = this.dynasties[this.dynasties.length - 1].toYear;
       this._initTimelineBands();
 
+      const rawLang = (new URLSearchParams(location.search).get('lang') || '').toLowerCase();
       this.locale =
-        new URLSearchParams(location.search).get('lang') === 'en' ? 'en' : 'zh';
+        rawLang === 'en'
+          ? 'en'
+          : /^(zh-tw|zh_tw|tw|hk|zh-hk|zh_hk|zh-hant|zh_hant|hant)$/.test(rawLang)
+            ? 'zh-tw'
+            : 'zh';
       this.year = this.dynasties[0].focusYear;
       this.dynastyIdx = 0;
       this.activeSnapKey = null;
@@ -444,7 +449,7 @@
         return Promise.resolve(this.snapshots);
       }
       if (!this._fullSnapshotsPromise) {
-        this._fullSnapshotsPromise = this._loadScriptOnce('js/atlas_snapshots.js?v=20261021e').then(
+        this._fullSnapshotsPromise = this._loadScriptOnce('js/atlas_snapshots.js?v=20261024a').then(
           () => {
             this.snapshots = window.ATLAS_SNAPSHOTS || this.snapshots;
             this._hydrateSnapshots();
@@ -468,7 +473,7 @@
         return Promise.resolve(this.enLocale);
       }
       if (!this._enLocalePromise) {
-        this._enLocalePromise = this._loadScriptOnce('js/i18n_dict.js?v=20261021e').then(() => {
+        this._enLocalePromise = this._loadScriptOnce('js/i18n_dict.js?v=20261024a').then(() => {
           if (window.EN_LOCALE) {
             this.enLocale = window.EN_LOCALE;
             this.searchIndex = null;
@@ -608,15 +613,81 @@
     }
 
     // ---------------- Localization helpers ----------------
+    _zh(text) {
+      if (!text || typeof text !== 'string') return text;
+      if (this.locale === 'zh-tw' && typeof window !== 'undefined' && window.ZH_HANT_CONV) {
+        return window.ZH_HANT_CONV.toHant(text);
+      }
+      return text;
+    }
+
+    _toHans(text) {
+      if (!text || typeof text !== 'string') return text;
+      if (typeof window !== 'undefined' && window.ZH_HANT_CONV) {
+        return window.ZH_HANT_CONV.toHans(text);
+      }
+      return text;
+    }
+
+    _applyZhHantDom(root) {
+      if (typeof document === 'undefined') return;
+      const targetRoot = root || this._id('app-shell') || document.body;
+      if (!targetRoot) return;
+      const isHant = this.locale === 'zh-tw';
+      const isHans = this.locale === 'zh';
+      if (!isHant && !isHans) return;
+      const conv = typeof window !== 'undefined' && window.ZH_HANT_CONV;
+      if (!conv) return;
+
+      const walk = (node) => {
+        if (!node) return;
+        if (node.nodeType === 1) {
+          const tag = node.tagName;
+          if (tag === 'SCRIPT' || tag === 'STYLE') return;
+          if (node.classList && node.classList.contains('locale-pill-group')) return;
+          for (const attr of ['title', 'placeholder', 'aria-label']) {
+            if (node.hasAttribute && node.hasAttribute(attr)) {
+              const curVal = node.getAttribute(attr);
+              const backupKey = `_hansAttr_${attr}`;
+              if (isHant && curVal && /[\u4e00-\u9fff]/.test(curVal)) {
+                if (node[backupKey] === undefined) node[backupKey] = curVal;
+                const nextVal = conv.toHant(node[backupKey]);
+                if (nextVal !== curVal) node.setAttribute(attr, nextVal);
+              } else if (isHans && node[backupKey] !== undefined) {
+                node.setAttribute(attr, node[backupKey]);
+              }
+            }
+          }
+          const children = node.childNodes;
+          if (children && children.length) {
+            for (let i = 0; i < children.length; i++) {
+              walk(children[i]);
+            }
+          }
+        } else if (node.nodeType === 3) {
+          const val = node.nodeValue;
+          if (isHant && val && /[\u4e00-\u9fff]/.test(val)) {
+            if (node._hansText === undefined) node._hansText = val;
+            const nextVal = conv.toHant(node._hansText);
+            if (nextVal !== val) node.nodeValue = nextVal;
+          } else if (isHans && node._hansText !== undefined) {
+            node.nodeValue = node._hansText;
+          }
+        }
+      };
+      walk(targetRoot);
+    }
+
     uiStr(key, fallback) {
       if (this.locale === 'en' && this.enLocale.strings && this.enLocale.strings[key] !== undefined) {
         return this.enLocale.strings[key];
       }
-      return fallback;
+      return this._zh(fallback);
     }
 
     trTerm(text) {
-      if (!text || this.locale !== 'en') return text;
+      if (!text) return text;
+      if (this.locale !== 'en') return this._zh(text);
       return this._enDict(text);
     }
 
@@ -667,33 +738,33 @@
     dynastyName(d) {
       return this.locale === 'en' && this.enLocale.dynasties[d.key]
         ? this.enLocale.dynasties[d.key].name
-        : d.title;
+        : this._zh(d.title);
     }
 
     dynastyBadge(d) {
-      if (!d) return this.locale === 'en' ? 'All Eras' : '历代';
+      if (!d) return this.locale === 'en' ? 'All Eras' : this._zh('历代');
       return this.locale === 'en' && this.enLocale.dynasties[d.key]
         ? this.enLocale.dynasties[d.key].short
-        : d.badge || d.title;
+        : this._zh(d.badge || d.title);
     }
 
     dynastySeat(d) {
       return this.locale === 'en' && this.enLocale.dynasties[d.key]
         ? this.enLocale.dynasties[d.key].capital
-        : d.seat;
+        : this._zh(d.seat);
     }
 
     dynastySummary(d) {
       return this.locale === 'en' && this.enLocale.dynasties[d.key]
         ? this.enLocale.dynasties[d.key].desc
-        : d.summary;
+        : this._zh(d.summary);
     }
 
     milestoneHeadline(d, m) {
       if (this.locale === 'en') {
         return this._enMilestoneHeadline(d, m);
       }
-      return m.headline;
+      return this._zh(m.headline);
     }
 
     milestoneSite(d, m) {
@@ -714,7 +785,7 @@
         const hit = this.enLocale.corridors[c.key];
         return (Array.isArray(hit) ? hit[0] : hit.name) || c.title;
       }
-      return c.title;
+      return this._zh(c.title);
     }
 
     corridorSummary(c) {
@@ -722,7 +793,7 @@
         const hit = this.enLocale.corridors[c.key];
         return (Array.isArray(hit) ? hit[1] : hit.note) || '';
       }
-      return c.summary;
+      return this._zh(c.summary);
     }
 
     formatYear(y, compact = false) {
@@ -736,6 +807,9 @@
     }
 
     formatSpan(d) {
+      if (d && d.key === 'prc') {
+        return `${this.formatYear(d.fromYear, true)} —`;
+      }
       return `${this.formatYear(d.fromYear, true)} — ${this.formatYear(d.toYear, true)}`;
     }
 
@@ -870,14 +944,14 @@
       }
       if (yr >= 1949) {
         if (dynasty && dynasty.key === 'roc' && yr === 1949) {
-          return '民国三十八年';
+          return this._zh('民国三十八年');
         }
-        return dynasty ? this.dynastyName(dynasty) : '现代';
+        return dynasty ? this.dynastyName(dynasty) : this._zh('现代');
       }
       const match = regional || this._resolveEraSpan(yr, dynasty);
       const [startY, , baseNum = 1] = match;
       const num = yr - startY + baseNum;
-      return this._formatSpanEraZh(match, num);
+      return this._zh(this._formatSpanEraZh(match, num));
     }
 
     applyLocale() {
@@ -888,7 +962,8 @@
         this._ensureEnglishLocale().then(() => this.applyLocale());
         return;
       }
-      document.documentElement.lang = this.locale === 'en' ? 'en' : 'zh-CN';
+      document.documentElement.lang =
+        this.locale === 'en' ? 'en' : this.locale === 'zh-tw' ? 'zh-Hant' : 'zh-CN';
       this._syncDocumentSeoMeta();
       this._syncSeoDirectoryLocale();
 
@@ -946,8 +1021,44 @@
             ? 'Map Pinpoint · Ancient Place Quiz'
             : '舆图寻址 · 古地名小试';
       }
-      const lblLoc = this._id('lbl-locale') || this._id('act-locale');
-      lblLoc.textContent = this.locale === 'en' ? '中文' : 'EN';
+      const actLocHant = this._id('act-locale-hant');
+      const lblLocHant = this._id('lbl-locale-hant') || actLocHant;
+      const actLoc = this._id('act-locale');
+      const lblLoc = this._id('lbl-locale') || actLoc;
+      if (this.locale === 'zh') {
+        if (lblLocHant) lblLocHant.textContent = '繁';
+        if (actLocHant) {
+          actLocHant.dataset.targetLocale = 'zh-tw';
+          actLocHant.title = '切換至繁體中文';
+        }
+        if (lblLoc) lblLoc.textContent = 'EN';
+        if (actLoc) {
+          actLoc.dataset.targetLocale = 'en';
+          actLoc.title = 'Switch to English';
+        }
+      } else if (this.locale === 'zh-tw') {
+        if (lblLocHant) lblLocHant.textContent = '简';
+        if (actLocHant) {
+          actLocHant.dataset.targetLocale = 'zh';
+          actLocHant.title = '切换至简体中文';
+        }
+        if (lblLoc) lblLoc.textContent = 'EN';
+        if (actLoc) {
+          actLoc.dataset.targetLocale = 'en';
+          actLoc.title = 'Switch to English';
+        }
+      } else {
+        if (lblLocHant) lblLocHant.textContent = '简';
+        if (actLocHant) {
+          actLocHant.dataset.targetLocale = 'zh';
+          actLocHant.title = '切换至简体中文 / Switch to Simplified Chinese';
+        }
+        if (lblLoc) lblLoc.textContent = '繁';
+        if (actLoc) {
+          actLoc.dataset.targetLocale = 'zh-tw';
+          actLoc.title = '切換至繁體中文 / Switch to Traditional Chinese';
+        }
+      }
       const ghBtn = this._id('act-github-star');
       if (ghBtn) {
         ghBtn.title =
@@ -1064,7 +1175,7 @@
       if (this.grpRivers) {
         this.grpRivers.querySelectorAll('.hydro-label').forEach((node) => {
           node.textContent =
-            this.locale === 'en' ? node.dataset.en || '' : node.dataset.zh || '';
+            this.locale === 'en' ? node.dataset.en || '' : this._zh(node.dataset.zh || '');
         });
       }
 
@@ -1118,6 +1229,7 @@
           this.presentChallengeRound();
         }
       }
+      this._applyZhHantDom();
     }
 
     // ---------------- Base Layers ----------------
@@ -1210,7 +1322,9 @@
             ? 'is-trunk'
             : lb.kind === 'lake'
               ? 'is-lake'
-              : 'is-river';
+              : lb.kind === 'range'
+                ? 'is-range is-crowded-hidden'
+                : 'is-river';
         const rot = lb.rot || 0;
         const tNode = this._svgNode(
           'text',
@@ -1225,7 +1339,7 @@
           },
           this.grpRivers
         );
-        tNode.textContent = this.locale === 'en' ? lb.en || '' : lb.zh || '';
+        tNode.textContent = this.locale === 'en' ? lb.en || '' : this._zh(lb.zh || '');
       }
     }
 
@@ -1563,7 +1677,7 @@
           rLbl.textContent = isQiao
             ? this.locale === 'en'
               ? `${this.trTerm(reg.title)} (Emigre)`
-              : `${reg.title}·侨`
+              : this._zh(`${reg.title}·侨`)
             : this.trTerm(reg.title);
         }
       }
@@ -1690,14 +1804,23 @@
       return d;
     }
 
+    _isSettlementCapital(item, year) {
+      if (!item || !item.isCapital) return false;
+      if (!Array.isArray(item.capitalPeriods) || !item.capitalPeriods.length) return true;
+      return item.capitalPeriods.some(([y0, y1]) => year >= y0 && year <= y1);
+    }
+
     _settlementMask(dynasty, year) {
       const sMask = (dynasty.settlements || [])
-        .map((item) =>
-          (item.appear !== undefined && year < item.appear) ||
-          (item.vanish !== undefined && year >= item.vanish)
-            ? '0'
-            : '1'
-        )
+        .map((item) => {
+          if (
+            (item.appear !== undefined && year < item.appear) ||
+            (item.vanish !== undefined && year >= item.vanish)
+          ) {
+            return '0';
+          }
+          return this._isSettlementCapital(item, year) ? '2' : '1';
+        })
         .join('');
       const pMask = HistoricalAtlasController.STRATEGIC_PASSES.map((p) =>
         (p.appear !== undefined && year < p.appear) ||
@@ -1720,7 +1843,7 @@
             (item.vanish === undefined || this.year < item.vanish)
         )
         .sort((a, b) => {
-          const rank = (s) => (s.isCapital ? 2 : s.tier === 2 ? 0 : 1);
+          const rank = (s) => (this._isSettlementCapital(s, this.year) ? 2 : s.tier === 2 ? 0 : 1);
           return rank(a) - rank(b);
         });
 
@@ -1731,19 +1854,23 @@
         !this.challenge;
       const hintCapital = showOnboardingTraceHint
         ? activeList.find(
-            (s) => s.isCapital && dynasty.seat && dynasty.seat.includes(s.ancient.split(/[（(]/)[0])
-          ) || activeList.find((s) => s.isCapital)
+            (s) =>
+              this._isSettlementCapital(s, this.year) &&
+              dynasty.seat &&
+              dynasty.seat.includes(s.ancient.split(/[（(]/)[0])
+          ) || activeList.find((s) => this._isSettlementCapital(s, this.year))
         : null;
 
       for (const item of activeList) {
         const [x, y] = this.projector.toScreen(item.coord[0], item.coord[1]);
-        const isTier2 = item.tier === 2 && !item.isCapital;
+        const isCapNow = this._isSettlementCapital(item, this.year);
+        const isTier2 = item.tier === 2 && !isCapNow;
         const isHintCap = item === hintCapital;
         const isTracedCity =
           isTier2 &&
           Boolean(this.activeTrace) &&
           this.projector.greatCircleKm(this.activeTrace, item.coord) <= 28;
-        const cls = item.isCapital
+        const cls = isCapNow
           ? isHintCap
             ? 'settlement-node is-capital has-trace-hint'
             : 'settlement-node is-capital'
@@ -1767,9 +1894,9 @@
         node.dataset.lng = String(item.coord[0]);
         node.dataset.lat = String(item.coord[1]);
         node.dataset.prefAlign = item.align || 'r';
-        node.dataset.tier = item.isCapital ? '0' : isTier2 ? '2' : '1';
+        node.dataset.tier = isCapNow ? '0' : isTier2 ? '2' : '1';
 
-        if (item.isCapital) {
+        if (isCapNow) {
           if (isHintCap) {
             this._svgNode('circle', { class: 'cap-breath-ring', r: 6.5 }, node);
             this._svgNode('circle', { class: 'cap-breath-ring is-delayed', r: 6.5 }, node);
@@ -1830,7 +1957,7 @@
           );
           hintTxt.textContent = isEn
             ? '◆ Click city · 2,000 yrs of history ›'
-            : '◆ 点按城池 · 阅两千年身世 ›';
+            : this._zh('◆ 点按城池 · 阅两千年身世 ›');
         }
       }
 
@@ -1869,10 +1996,10 @@
             group
           );
           pNode.dataset.passKey = p.key;
-          pNode.dataset.ancient = this.locale === 'en' ? p.ancientEn : p.ancientZh;
-          pNode.dataset.modern = this.locale === 'en' ? p.modernEn : p.modernZh;
-          pNode.dataset.remark = this.locale === 'en' ? p.rangeEn : p.rangeZh;
-          pNode.dataset.chokepoint = this.locale === 'en' ? p.chokepointEn : p.chokepointZh;
+          pNode.dataset.ancient = this.locale === 'en' ? p.ancientEn : this._zh(p.ancientZh);
+          pNode.dataset.modern = this.locale === 'en' ? p.modernEn : this._zh(p.modernZh);
+          pNode.dataset.remark = this.locale === 'en' ? p.rangeEn : this._zh(p.rangeZh);
+          pNode.dataset.chokepoint = this.locale === 'en' ? p.chokepointEn : this._zh(p.chokepointZh);
           pNode.dataset.lng = String(p.coord[0]);
           pNode.dataset.lat = String(p.coord[1]);
           pNode.dataset.prefAlign = p.align || 'r';
@@ -1895,7 +2022,7 @@
             { class: 'name pass-name', x: dx, y: dy1, 'text-anchor': anchor },
             pNode
           );
-          nameEl.textContent = this.locale === 'en' ? p.ancientEn : p.ancientZh;
+          nameEl.textContent = this.locale === 'en' ? p.ancientEn : this._zh(p.ancientZh);
         }
       }
       group.querySelectorAll('.settlement-node.is-capital').forEach((capNode) => {
@@ -2023,11 +2150,13 @@
       ) {
         return this.activeMilestone.idx;
       }
+      let exactIdx = -1;
       let activeIdx = -1;
       (dynasty.milestones || []).forEach((m, idx) => {
+        if (m.year === this.year) exactIdx = idx;
         if (this._clampYearToDynasty(dynasty, m.year) <= this.year) activeIdx = idx;
       });
-      return activeIdx;
+      return exactIdx >= 0 ? exactIdx : activeIdx;
     }
 
     _updateMilestoneStates(dynasty) {
@@ -2203,6 +2332,7 @@
         });
       }
       this.milestoneBalloon.classList.remove('is-hidden', 'is-offscreen');
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this.milestoneBalloon);
       const vf = this._id('viewport-frame');
       if (vf) vf.classList.add('has-open-milestone-balloon');
       this._positionMilestoneBalloon();
@@ -2607,6 +2737,7 @@
           this.mapKey.appendChild(row);
         }
       }
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this.mapKey);
       this.mapKey.style.display = this.mapKey.firstChild ? 'flex' : 'none';
     }
 
@@ -2816,6 +2947,7 @@
       }
       this._updateMobileChronicleBtn(dynasty);
       this._highlightCurrentMilestone(dynasty);
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this._id('chronicle-pane'));
     }
 
     _highlightCurrentMilestone(dynasty) {
@@ -2945,8 +3077,9 @@
     _resolvePersonProfile(personOrQuery) {
       if (!personOrQuery) return null;
       if (typeof personOrQuery === 'object' && personOrQuery.zh) return personOrQuery;
-      const raw = String(personOrQuery).trim();
-      if (!raw) return null;
+      const rawInput = String(personOrQuery).trim();
+      if (!rawInput) return null;
+      const raw = /[\u4e00-\u9fff]/.test(rawInput) ? this._toHans(rawInput) : rawInput;
       const qLow = raw.toLowerCase();
       const fold = (s) =>
         String(s || '')
@@ -3497,7 +3630,7 @@
         const ownsClusterLabel = isCur || (!clusterHasCur && cl.isPrimary);
         if (ownsClusterLabel) {
           const fullLbl =
-            this.locale === 'en' ? ev.siteEn || this.trTerm(ev.siteZh) : ev.siteZh;
+            this.locale === 'en' ? ev.siteEn || this.trTerm(ev.siteZh) : this._zh(ev.siteZh);
           const compactLbl = isCur
             ? fullLbl
             : fullLbl.replace(/\s*[（(][^）)]*[）)]\s*/g, '').trim() || fullLbl;
@@ -3665,6 +3798,7 @@
           scrollEl.scrollTop = 0;
         }
       }
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this._id('genealogy-card'));
     }
 
     _syncTracedPrefecture() {
@@ -4234,8 +4368,7 @@
             { class: 'trace-pin-label', x: '0', y: '22', 'text-anchor': 'middle' },
             g
           );
-          lbl.textContent =
-            this.locale === 'en' ? this.trTerm(this.activeTraceLabel) : this.activeTraceLabel;
+          lbl.textContent = this.trTerm(this.activeTraceLabel);
         }
       }
       if (!fromYearSync && !onCustomRouteStop) {
@@ -4591,6 +4724,7 @@
         } else if (scrollEl) {
           scrollEl.scrollTop = 0;
         }
+        if (this.locale === 'zh-tw') this._applyZhHantDom(this._id('genealogy-card'));
       };
 
       renderSubAndList();
@@ -4837,7 +4971,7 @@
           const sp = this._resolveEraSpan(this.year, d);
           const templeZh = sp && sp[3];
           bubble.title =
-            this.locale === 'en' || !templeZh ? eraText : `${eraText}（${templeZh}）`;
+            this.locale === 'en' || !templeZh ? eraText : `${eraText}（${this._zh(templeZh)}）`;
         } else {
           bubble.title = eraText;
         }
@@ -5681,6 +5815,8 @@
       }
       if (this.grpRivers && !this.grpRivers.classList.contains('is-hidden')) {
         this.grpRivers.querySelectorAll('.hydro-label').forEach((hl) => {
+          // Mountain-range names are background context: city labels must never yield to them.
+          if (hl.classList.contains('is-range')) return;
           const hx = parseFloat(hl.getAttribute('data-x'));
           const hy = parseFloat(hl.getAttribute('data-y'));
           if (!isNaN(hx) && !isNaN(hy)) {
@@ -6177,6 +6313,29 @@
         }
       });
 
+      // Tier 6: Mountain-range names are the lowest priority; hide rather than cover any label above.
+      // They share the pass zoom threshold so the overview keeps its current density.
+      if (this.grpRivers && !this.grpRivers.classList.contains('is-hidden')) {
+        this.grpRivers.querySelectorAll('.hydro-label.is-range').forEach((node) => {
+          if (!showPasses) {
+            node.classList.add('is-crowded-hidden');
+            return;
+          }
+          const rx = parseFloat(node.getAttribute('data-x'));
+          const ry = parseFloat(node.getAttribute('data-y'));
+          if (isNaN(rx) || isNaN(ry)) return;
+          const rad = (parseFloat(node.getAttribute('data-rot')) || 0) * (Math.PI / 180);
+          const hw = (this._estimateLocalTextWidth(node.textContent, 7.2, 3.6) * 0.5 + 2) * s;
+          const hh = 4.6 * s;
+          const ex = Math.abs(Math.cos(rad)) * hw + Math.abs(Math.sin(rad)) * hh;
+          const ey = Math.abs(Math.sin(rad)) * hw + Math.abs(Math.cos(rad)) * hh;
+          const box = { x1: rx - ex, y1: ry - ey, x2: rx + ex, y2: ry + ey };
+          const crowded = overlapArea(box) > (box.x2 - box.x1) * (box.y2 - box.y1) * 0.03;
+          node.classList.toggle('is-crowded-hidden', crowded);
+          if (!crowded) occupied.push(box);
+        });
+      }
+
       this.grpProvNames.querySelectorAll('.province-caption').forEach((node) => {
         node.setAttribute('font-size', (9.5 * s).toFixed(1));
       });
@@ -6283,7 +6442,7 @@
       const pillsHtml = stops
         .map((st, i) => {
           const rawLbl = st.query || st.name;
-          const baseLbl = isEn ? this.trTerm(rawLbl) : rawLbl;
+          const baseLbl = isEn ? this.trTerm(rawLbl) : this._zh(rawLbl);
           const yrTag =
             st.year < 0 ? (isEn ? `${-st.year} BCE` : `前${-st.year}`) : `${st.year}`;
           const lbl = isMultiYear && st.year !== undefined ? `${baseLbl} (${yrTag})` : baseLbl;
@@ -6353,6 +6512,7 @@
           this.closeGenealogyCard();
         });
       }
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this.journeyCard);
     }
 
     resetCamera() {
@@ -6693,6 +6853,7 @@
       this._id('challenge-question').innerHTML =
         `<div>${promptHtml}</div>` +
         `<div class="challenge-clue-box"><span class="clue-tag">${clueTag}</span><span>${escHtml(baseClue + extraEventStr)}</span></div>`;
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this._id('challenge-banner'));
     }
 
     presentChallengeRound() {
@@ -6754,6 +6915,7 @@
           ? `Confirm Pin ${SVG_ICONS.arrowRight}`
           : `确认落针 ${SVG_ICONS.arrowRight}`;
       this._id('challenge-result').classList.remove('is-hidden');
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this._id('challenge-banner'));
     }
 
     _renderChallengeAnsweredVerdict() {
@@ -6798,6 +6960,10 @@
           ? this.uiStr('quiz_see_result', '查看成绩')
           : `${this.locale === 'en' ? 'Next' : '下一题'} ${SVG_ICONS.arrowRight}`;
       this._id('challenge-result').classList.remove('is-hidden');
+      if (this.locale === 'zh-tw') {
+        this._applyZhHantDom(this._id('challenge-banner'));
+        this._applyZhHantDom(this.grpChallenge);
+      }
     }
 
     _evaluateLocateClick(svgX, svgY) {
@@ -6921,6 +7087,7 @@
         nextBtn.onclick = null;
         this.startChallenge();
       };
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this._id('challenge-banner'));
     }
 
     // ---------------- Historical Journeys (青史行迹) ----------------
@@ -7139,8 +7306,14 @@
         const enDyn = (this.enLocale.dynasties && this.enLocale.dynasties[d.key]) || {};
         const nameEn = enDyn.name || d.title;
         const shortEn = enDyn.short || d.badge || d.title;
-        const spanZh = `${d.fromYear <= 0 ? '前' + -d.fromYear : d.fromYear}—${d.toYear <= 0 ? '前' + -d.toYear : d.toYear}`;
-        const spanEn = `${d.fromYear <= 0 ? -d.fromYear + ' BCE' : d.fromYear + ' CE'} – ${d.toYear <= 0 ? -d.toYear + ' BCE' : d.toYear + ' CE'}`;
+        const spanZh =
+          d.key === 'prc'
+            ? `${d.fromYear}—`
+            : `${d.fromYear <= 0 ? '前' + -d.fromYear : d.fromYear}—${d.toYear <= 0 ? '前' + -d.toYear : d.toYear}`;
+        const spanEn =
+          d.key === 'prc'
+            ? `${d.fromYear} CE –`
+            : `${d.fromYear <= 0 ? -d.fromYear + ' BCE' : d.fromYear + ' CE'} – ${d.toYear <= 0 ? -d.toYear + ' BCE' : d.toYear + ' CE'}`;
         entries.push({
           kind: 'dynasty',
           dynasty: d,
@@ -7332,8 +7505,9 @@
     }
 
     _matchEraResults(rawQuery) {
-      const trimmed = rawQuery.trim();
-      if (!trimmed) return [];
+      const rawTrim = rawQuery.trim();
+      if (!rawTrim) return [];
+      const trimmed = /[\u4e00-\u9fff]/.test(rawTrim) ? this._toHans(rawTrim) : rawTrim;
       const hits = [];
 
       // Direct Gregorian year match (e.g. "1083", "公元1083年", "前214年", "-214", "221 BCE", "741 CE")
@@ -7481,7 +7655,10 @@
     }
 
     _queryQuickSearch(rawQuery) {
-      const q = rawQuery.trim().toLowerCase();
+      const rawTrim = rawQuery.trim();
+      if (!rawTrim) return [];
+      const normQ = /[\u4e00-\u9fff]/.test(rawTrim) ? this._toHans(rawTrim) : rawTrim;
+      const q = normQ.toLowerCase();
       if (!q) return [];
       const fold = (s) =>
         String(s || '')
@@ -7490,7 +7667,7 @@
       const isAscii = /[a-z]/i.test(q) && !/[\u4e00-\u9fa5]/.test(q);
       const qFold = isAscii ? fold(q) : '';
       const index = this._ensureSearchIndex();
-      const results = [...this._matchEraResults(rawQuery)];
+      const results = [...this._matchEraResults(normQ)];
 
       for (const item of index) {
         let score = 0;
@@ -7543,7 +7720,6 @@
       }
 
       // Dynamic zero-config fallback if query matches >=2 historical events for an unlisted figure
-      const rawTrim = rawQuery.trim();
       if (
         !results.some((r) => r.kind === 'person') &&
         !results.some(
@@ -7551,9 +7727,9 @@
             (r.kind === 'city' || r.kind === 'pass' || r.kind === 'gazetteer' || r.kind === 'dynasty') &&
             r.score >= 92
         ) &&
-        /^[\u4e00-\u9fa5]{2,4}$/.test(rawTrim)
+        /^[\u4e00-\u9fa5]{2,4}$/.test(normQ)
       ) {
-        const adhoc = this._resolvePersonProfile(rawTrim);
+        const adhoc = this._resolvePersonProfile(normQ);
         if (adhoc) {
           const evs = this._collectPersonEvents(adhoc);
           if (evs.length >= 2) {
@@ -7806,7 +7982,7 @@
           const sampleQueries =
             this.locale === 'en'
               ? ["Chang'an", 'Chibi', '627', 'Cao Cao']
-              : ['长安', '赤壁', '贞观', '霍去病'];
+              : ['长安', '赤壁', '贞观', '霍去病'].map((s) => this._zh(s));
           const chipsWrap = document.createElement('div');
           chipsWrap.className = 'sr-guide-chips';
           const guideLbl = document.createElement('span');
@@ -7866,6 +8042,7 @@
 
           searchList.appendChild(guideLi);
           searchList.classList.remove('is-hidden');
+          if (this.locale === 'zh-tw') this._applyZhHantDom(searchList);
           return;
         }
         if (
@@ -7880,7 +8057,7 @@
         searchList.innerHTML = '';
         if (!currentResults.length) {
           const empty = document.createElement('li');
-          empty.innerHTML = `<span class="sr-sub">${this.locale === 'en' ? 'No matching place, era, or event' : '未找到匹配的古今地名、州府、年号或事件'}</span>`;
+          empty.innerHTML = `<span class="sr-sub">${this.locale === 'en' ? 'No matching place, era, or event' : this._zh('未找到匹配的古今地名、州府、年号或事件')}</span>`;
           searchList.appendChild(empty);
           searchList.classList.remove('is-hidden');
           return;
@@ -7888,9 +8065,9 @@
         currentResults.forEach((item, idx) => {
           const li = document.createElement('li');
           if (idx === activeSearchIdx) li.classList.add('is-active');
-          const mainText = this.locale === 'en' ? item.titleEn : item.titleZh;
-          const subText = this.locale === 'en' ? item.subEn : item.subZh;
-          const tagText = `${this.dynastyBadge(item.dynasty)} · ${kindLabel[item.kind] || ''}`;
+          const mainText = this.locale === 'en' ? item.titleEn : this._zh(item.titleZh);
+          const subText = this.locale === 'en' ? item.subEn : this._zh(item.subZh);
+          const tagText = `${this.dynastyBadge(item.dynasty)} · ${this._zh(kindLabel[item.kind] || '')}`;
           li.innerHTML =
             `<div><span class="sr-main">${escHtml(mainText)}</span>${subText ? `<span class="sr-sub">${escHtml(subText)}</span>` : ''}</div>` +
             `<span class="sr-tag">${escHtml(tagText)}</span>`;
@@ -8122,8 +8299,18 @@
         musicNextBtn.addEventListener('click', () => this.nextMusicTrack());
       }
 
+      const actLocHant = this._id('act-locale-hant');
+      if (actLocHant) {
+        actLocHant.addEventListener('click', () => {
+          const target = actLocHant.dataset.targetLocale;
+          this.locale = target || (this.locale === 'zh' ? 'zh-tw' : 'zh');
+          this.applyLocale();
+        });
+      }
       this._id('act-locale').addEventListener('click', () => {
-        this.locale = this.locale === 'en' ? 'zh' : 'en';
+        const btn = this._id('act-locale');
+        const target = btn && btn.dataset && btn.dataset.targetLocale;
+        this.locale = target || (this.locale === 'en' ? 'zh' : 'en');
         this.applyLocale();
       });
 
@@ -8889,6 +9076,7 @@
     _showHoverTip(e, html) {
       const rect = this._id('viewport-frame').getBoundingClientRect();
       this.hoverTip.innerHTML = html;
+      if (this.locale === 'zh-tw') this._applyZhHantDom(this.hoverTip);
       const traceBtn = this.hoverTip.querySelector('.tt-trace-btn');
       this.hoverTip.classList.toggle('is-interactive', Boolean(traceBtn));
       if (traceBtn) {
@@ -8954,8 +9142,9 @@
 
     resolvePlace(place, year = this.year) {
       if (!place || typeof place !== 'string') return null;
-      const raw = place.trim();
-      if (!raw) return null;
+      const rawInput = place.trim();
+      if (!rawInput) return null;
+      const raw = /[\u4e00-\u9fff]/.test(rawInput) ? this._toHans(rawInput) : rawInput;
 
       const normApos = (s) =>
         String(s || '')
@@ -9483,18 +9672,18 @@
       const modernProvince = eraHit.modernLoc.inModernChina
         ? isEn
           ? this.trTerm(eraHit.modernLoc.modernTitle)
-          : eraHit.modernLoc.modernTitle
+          : this._zh(eraHit.modernLoc.modernTitle)
         : null;
       const nearestCity = eraHit.near
         ? {
-            ancient: isEn ? this.trTerm(eraHit.near.s.ancient) : eraHit.near.s.ancient,
+            ancient: isEn ? this.trTerm(eraHit.near.s.ancient) : this._zh(eraHit.near.s.ancient),
             modern: isEn
               ? this.trModernCity(eraHit.near.s.modern || '')
-              : eraHit.near.s.modern || '',
+              : this._zh(eraHit.near.s.modern || ''),
             distanceKm: Math.round(eraHit.near.km),
             ...(eraHit.near.s.isCapital ? { isCapital: true } : {}),
             ...(eraHit.near.s.remark
-              ? { remark: isEn ? this.trTerm(eraHit.near.s.remark) : eraHit.near.s.remark }
+              ? { remark: isEn ? this.trTerm(eraHit.near.s.remark) : this._zh(eraHit.near.s.remark) }
               : {}),
           }
         : null;
@@ -9503,9 +9692,9 @@
           const isEmigre = item.category === '侨州' || item.category === '侨郡';
           return this.trTerm(item.title) + (isEmigre ? ' (Emigre)' : '');
         }
-        return (
+        return this._zh(
           item.title +
-          (item.category && !item.title.endsWith(item.category) ? `(${item.category})` : '')
+            (item.category && !item.title.endsWith(item.category) ? `(${item.category})` : '')
         );
       };
       const regions =
@@ -9544,9 +9733,18 @@
         eraHit.modernLoc.modernTitle,
         closestOverall
       );
-      const lore = this._resolvePlaceLoreBanner(cLng, cLat, matchedPass, identityModern, null);
+      const rawLore = this._resolvePlaceLoreBanner(cLng, cLat, matchedPass, identityModern, null);
+      const lore =
+        rawLore && this.locale === 'zh-tw'
+          ? {
+              ...rawLore,
+              badge: this._zh(rawLore.badge),
+              tag: this._zh(rawLore.tag),
+              desc: this._zh(rawLore.desc),
+            }
+          : rawLore;
       return {
-        polity: eraHit.polity ? (isEn ? this.trTerm(eraHit.polity) : eraHit.polity) : null,
+        polity: eraHit.polity ? (isEn ? this.trTerm(eraHit.polity) : this._zh(eraHit.polity)) : null,
         regions,
         prefectures,
         modernProvince,
@@ -9617,7 +9815,7 @@
         const lblTxt = this._svgNode('text', { class: 'jn-label', x: '0', y: lblY }, g);
         const rawLbl = st.query || st.name;
         const isEn = this.locale === 'en';
-        const baseLbl = isEn ? this.trTerm(rawLbl) : rawLbl;
+        const baseLbl = isEn ? this.trTerm(rawLbl) : this._zh(rawLbl);
         const yrTag =
           st.year < 0 ? (isEn ? `${-st.year} BCE` : `前${-st.year}`) : `${st.year}`;
         lblTxt.textContent = isMultiYear && st.year !== undefined ? `${baseLbl} (${yrTag})` : baseLbl;
@@ -9710,9 +9908,9 @@
         personProfile && personEvents.length > 0
           ? {
               key: personProfile.key,
-              zh: personProfile.zh,
+              zh: this._zh(personProfile.zh),
               en: personProfile.en,
-              courtesyZh: personProfile.courtesyZh || '',
+              courtesyZh: this._zh(personProfile.courtesyZh || ''),
               courtesyEn: personProfile.courtesyEn || '',
               span: personProfile.span,
               stop: stopIdx,
@@ -9720,15 +9918,15 @@
               events: personEvents.map((ev, i) => ({
                 index: i,
                 year: ev.year,
-                dynasty: isEn ? this.dynastyName(ev.dynasty) : ev.dynasty.title,
-                site: isEn ? ev.siteEn || this.trTerm(ev.siteZh) : ev.siteZh,
+                dynasty: isEn ? this.dynastyName(ev.dynasty) : this._zh(ev.dynasty.title),
+                site: isEn ? ev.siteEn || this.trTerm(ev.siteZh) : this._zh(ev.siteZh),
                 modern: isEn
                   ? ev.modernEn || this.trModernCity(ev.modernZh || '')
-                  : ev.modernZh || '',
+                  : this._zh(ev.modernZh || ''),
                 coord: ev.coord,
-                text: isEn ? ev.textEn : ev.textZh,
+                text: isEn ? ev.textEn : this._zh(ev.textZh),
                 ...(ev.quoteZh || ev.quoteEn
-                  ? { quote: isEn ? ev.quoteEn || ev.quoteZh : ev.quoteZh || ev.quoteEn }
+                  ? { quote: isEn ? ev.quoteEn || ev.quoteZh : this._zh(ev.quoteZh || ev.quoteEn) }
                   : {}),
               })),
             }
@@ -9768,10 +9966,10 @@
             step: route.length + 1,
             year: tok.year,
             era: this.formatEraLabel(tok.year, sd, [r.lng, r.lat]),
-            dynasty: isEn ? this.dynastyName(sd) : sd.title,
+            dynasty: isEn ? this.dynastyName(sd) : this._zh(sd.title),
             place: cleanPlace,
-            resolvedName: isEn ? this.trTerm(r.name) : r.name,
-            modern: isEn ? this.trModernCity(r.modern || '') : r.modern || '',
+            resolvedName: isEn ? this.trTerm(r.name) : this._zh(r.name),
+            modern: isEn ? this.trModernCity(r.modern || '') : this._zh(r.modern || ''),
             coord: [Number(r.lng.toFixed(4)), Number(r.lat.toFixed(4))],
             distanceFromPrevKm: segKm,
             ...info,
@@ -9784,6 +9982,7 @@
           params.set('year', isMultiYear ? route.map((s) => s.year).join(',') : String(first.year));
           params.set('place', route.map((s) => s.place).join(','));
           if (isEn) params.set('lang', 'en');
+          else if (this.locale === 'zh-tw') params.set('lang', 'zh-tw');
           const basePath =
             typeof location !== 'undefined' ? `${location.origin}${location.pathname}` : '';
           return {
@@ -9792,8 +9991,8 @@
             era: this.formatEraLabel(first.year, d, first.coord),
             dynasty: {
               key: d.key,
-              title: isEn ? this.dynastyName(d) : d.title,
-              seat: isEn ? this.dynastySeat(d) : d.seat,
+              title: isEn ? this.dynastyName(d) : this._zh(d.title),
+              seat: isEn ? this.dynastySeat(d) : this._zh(d.seat),
               span: [d.fromYear, d.toYear],
             },
             place: route.map((s) => s.place).join(','),
@@ -9879,6 +10078,7 @@
         params.set('zoom', Number(targetZoom.toFixed(2)));
       }
       if (isEn) params.set('lang', 'en');
+      else if (this.locale === 'zh-tw') params.set('lang', 'zh-tw');
       const basePath =
         typeof location !== 'undefined' ? `${location.origin}${location.pathname}` : '';
 
@@ -9887,28 +10087,28 @@
         era: this.formatEraLabel(singleYear, d, hasCoord ? [cLng, cLat] : null),
         dynasty: {
           key: d.key,
-          title: isEn ? this.dynastyName(d) : d.title,
-          seat: isEn ? this.dynastySeat(d) : d.seat,
+          title: isEn ? this.dynastyName(d) : this._zh(d.title),
+          seat: isEn ? this.dynastySeat(d) : this._zh(d.seat),
           span: [d.fromYear, d.toYear],
         },
         place: placeLabel || null,
         resolvedName: resolved
           ? isEn
             ? this.trTerm(resolved.name)
-            : resolved.name
+            : this._zh(resolved.name)
           : activePersonEv
             ? isEn
               ? activePersonEv.siteEn || this.trTerm(activePersonEv.siteZh)
-              : activePersonEv.siteZh
+              : this._zh(activePersonEv.siteZh)
             : null,
         modern: resolved
           ? isEn
             ? this.trModernCity(resolved.modern || '')
-            : resolved.modern || ''
+            : this._zh(resolved.modern || '')
           : activePersonEv
             ? isEn
               ? activePersonEv.modernEn || this.trModernCity(activePersonEv.modernZh || '')
-              : activePersonEv.modernZh || ''
+              : this._zh(activePersonEv.modernZh || '')
             : null,
         coord: hasCoord ? [Number(cLng.toFixed(4)), Number(cLat.toFixed(4))] : null,
         zoom: Number(targetZoom.toFixed(2)),
