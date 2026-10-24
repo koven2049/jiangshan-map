@@ -2,9 +2,9 @@
 set -euo pipefail
 # manage.sh (physical) for jiangshan-map — static atlas site, pidfile + nohup.
 # Local serve: python3 server.py (repo root over HTTP, /health on port 8930).
-# Publish: the public site is GitHub Pages on DeanChensj/jiangshan-map
-# (deanchen.me/jiangshan-map); deploy here syncs the mini mirror + pushes
-# the koven2049 fork — the Pages release itself happens on the upstream side.
+# Deploy = zero-transfer, run entirely in this directory:
+#   validate (node) → sync koven2049 fork (origin) → publish upstream
+#   (DeanChensj/jiangshan-map is the GitHub Pages source of deanchen.me).
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
@@ -118,36 +118,82 @@ cmd_deploy() {
   while [[ $# -gt 0 ]]; do case "$1" in -d|--dry-run) dry_run=true;; *) log_error "Unknown opt: $1"; exit 1;; esac; shift; done
   local cfg="$SCRIPT_DIR/config/deploy.cfg"
   [[ -f "$cfg" ]] || { log_error "config/deploy.cfg not found. Copy from .example."; exit 1; }
-  local env_val ssh_target remote_path
+  local env_val
   env_val="$(grep '^env' "$cfg" | head -1 | cut -d '=' -f2 | xargs || true)"
-  ssh_target="$(grep '^ssh_target' "$cfg" | head -1 | cut -d '=' -f2 | xargs || true)"
-  remote_path="$(grep '^remote_path' "$cfg" | head -1 | cut -d '=' -f2 | xargs || true)"
   [[ "$env_val" == production || "$env_val" == test ]] || { log_error "deploy.cfg: env must be production or test"; exit 1; }
-  [[ -n "${ssh_target:-}" && -n "${remote_path:-}" ]] || { log_error "ssh_target/remote_path missing in deploy.cfg"; exit 1; }
-  _check_deploy_target "$ssh_target" || exit 1
   local branch; branch="$(git -C "$SCRIPT_DIR" branch --show-current)"
   [[ -n "$branch" ]] || { log_error "detached HEAD — checkout a branch first."; exit 1; }
+
+  # 1. 只发布已提交内容
+  if [[ -n "$(git -C "$SCRIPT_DIR" status --porcelain)" ]]; then
+    log_error "工作区有未提交改动——先 commit 再 deploy（deploy 只发布已提交内容）"
+    git -C "$SCRIPT_DIR" status --porcelain | head -5
+    exit 1
+  fi
+
+  # 2. 同步上游：本地只发布包含 upstream/main 最新提交的内容
+  git -C "$SCRIPT_DIR" fetch origin -q
+  git -C "$SCRIPT_DIR" fetch upstream -q
+  local behind
+  behind="$(git -C "$SCRIPT_DIR" rev-list --count "$branch..upstream/main")"
+  if (( behind > 0 )); then
+    if [[ "$dry_run" == true ]]; then
+      log_info "DRY RUN: upstream 有 $behind 个新提交，将先 merge upstream/main 再发布"
+    else
+      log_step "上游有 $behind 个新提交，先 merge upstream/main …"
+      git -C "$SCRIPT_DIR" merge upstream/main --no-edit \
+        || { log_error "合并冲突——解决后 commit，再重跑 ./manage.sh deploy"; exit 1; }
+    fi
+  fi
+
+  # 3. 发布闸：零依赖校验套件全绿才推
+  local node_bin; node_bin="$(pick_node)"
+  [[ -n "$node_bin" ]] || { log_error "node 不可用——发布前验证（scripts/validate_atlas.js）无法执行"; exit 1; }
   if [[ "$dry_run" == true ]]; then
-    log_info "DRY RUN ($env_val):"
-    log_info "  1. git push origin $branch  (koven2049 fork — Pages release is on the upstream side)"
-    log_info "  2. ssh $ssh_target 'cd $remote_path && git pull --ff-only'"
+    log_info "DRY RUN ($env_val): 验证 ✓ → git push origin $branch（koven2049 同步）→ git push upstream $branch（发布 deanchen.me）"
     return 0
   fi
-  log_step "Deploying ($env_val): push $branch → origin, sync mirror …"
-  git -C "$SCRIPT_DIR" push origin "$branch"
-  ssh "$ssh_target" "cd '$remote_path' && git pull --ff-only" \
-    || { log_error "Mirror sync failed on $ssh_target."; exit 1; }
-  log_ok "Deploy complete. (Public site https://deanchen.me/jiangshan-map/ is published from the upstream repo, not this push.)"
+  log_step "发布闸：node scripts/validate_atlas.js …"
+  "$node_bin" scripts/validate_atlas.js \
+    || { log_error "验证未通过——不发布"; exit 1; }
+
+  # 4. 双推：origin 同步 + upstream 发布
+  log_step "推送 origin（koven2049 同步）…"
+  git -C "$SCRIPT_DIR" push origin "$branch" || { log_error "推 origin 失败"; exit 1; }
+  log_step "推送 upstream（发布 deanchen.me）…"
+  local push_err=/tmp/jiangshan-map-push.err
+  if ! git -C "$SCRIPT_DIR" push upstream "$branch" 2>"$push_err"; then
+    if grep -q "Permission to\|publickey\|denied" "$push_err"; then
+      log_error "推 upstream 被拒：DeanChensj 的推送公钥还没配置（一次性设置）。"
+      log_error "把下面这把公钥加到 GitHub → DeanChensj/jiangshan-map → Settings → Deploy keys，勾选 Allow write access："
+      echo "    $(cat "$HOME/.ssh/jiangshan_map_deploy.pub" 2>/dev/null || echo '<~/.ssh/jiangshan_map_deploy.pub 不存在>')"
+    else
+      log_error "推 upstream 失败：$(tail -2 "$push_err")"
+    fi
+    rm -f "$push_err"
+    exit 1
+  fi
+  rm -f "$push_err"
+  log_ok "已发布 → https://deanchen.me/jiangshan-map/（Pages 构建约 1 分钟后生效）；origin 已同步。"
+}
+
+pick_node() {
+  local c
+  for c in "$(command -v node 2>/dev/null)" "$HOME"/.nvm/versions/node/*/bin/node; do
+    [[ -x "$c" ]] && { echo "$c"; return; }
+  done
+  echo ""
 }
 
 usage() {
   cat <<EOF
 ${SERVICE} (physical) — interactive historical atlas of China (static site)
 
-Serves the repo root over HTTP for local use and ops-dashboard probing; the
-public deployment is GitHub Pages (deanchen.me/jiangshan-map) from the
-upstream repo DeanChensj/jiangshan-map — this checkout tracks it as 'upstream'
-and pushes to the koven2049 fork ('origin').
+Serves the repo root over HTTP from this directory (port $PORT). Publishes
+to https://deanchen.me/jiangshan-map/ via GitHub Pages: deploy runs entirely
+in this directory — validate, sync the koven2049 fork (origin), push the
+upstream repo DeanChensj/jiangshan-map (the Pages source). Nothing is
+transferred to any machine.
 
 Usage: ./manage.sh <command> [options]
 
@@ -158,7 +204,7 @@ Commands:
   restart   stop + start
   status    Process + /health probe (exit 0 only when fully green)
   logs      Tail server.log
-  deploy [-d]  Push branch to origin + git pull the mini mirror (per config/deploy.cfg)
+  deploy [-d]  Validate → merge upstream → push origin (sync) + upstream (publish)
   help      Show this help
 
 Examples:
