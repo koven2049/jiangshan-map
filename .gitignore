@@ -11,3 +11,4 @@ _snap_skill_tmp_*.html
 # 部署目标（含 ssh 信息），不入库
 config/deploy.cfg
 run/
+.worktree/
