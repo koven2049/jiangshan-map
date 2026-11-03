@@ -12,3 +12,5 @@ _snap_skill_tmp_*.html
 config/deploy.cfg
 run/
 .worktree/
+# 本地运维手册（内部细节，不随公开仓发布）
+OPS.md
