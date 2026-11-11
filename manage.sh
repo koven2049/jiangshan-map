@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# manage.sh (physical) for jiangshan-map — static atlas site, pidfile + nohup.
+# manage.sh (physical) for jiangshan-map — static atlas site, pidfile + nohup;
+# mini 上由 system LaunchDaemon com.koven.jiangshan-map 托管时自动切到 launchd 分支。
 # Local serve: python3 server.py (repo root over HTTP, /health on port 8930).
 # Deploy = zero-transfer, run entirely in this directory:
 #   validate (node) → push origin (koven2049/jiangshan-map — the ONLY remote
@@ -59,7 +60,31 @@ EOF
   log_ok "Init complete."
 }
 
+# ── system LaunchDaemon 托管（mini 生产，见 ~/Services/README）：不 nohup，start/stop/restart 走 launchd ──
+LAUNCHD_LABEL="com.koven.jiangshan-map"
+under_launchd() { [[ -f "/Library/LaunchDaemons/${LAUNCHD_LABEL}.plist" ]]; }
+launchd_pid() { launchctl print "system/$LAUNCHD_LABEL" 2>/dev/null | sed -n 's/^[[:space:]]*pid = \([0-9]*\)$/\1/p' | head -1; }
+launchd_cmd() {
+  local pid n i; pid="$(launchd_pid)"
+  case "$1" in
+    start)
+      [[ -n "$pid" ]] && { log_ok "launchd 托管中 (pid $pid)"; return 0; }
+      log_error "launchd 托管但未运行: ! sudo launchctl kickstart -k system/$LAUNCHD_LABEL"; return 1 ;;
+    stop)
+      log_warn "launchd KeepAlive 托管, kill 会被拉起。真正停用: ! sudo launchctl bootout system/$LAUNCHD_LABEL"; return 0 ;;
+    restart)
+      [[ -n "$pid" ]] || { launchd_cmd start; return; }
+      kill -TERM "$pid" 2>/dev/null || true
+      for i in $(seq 1 25); do
+        sleep 1; n="$(launchd_pid)"
+        [[ -n "$n" && "$n" != "$pid" ]] && { log_ok "launchd 已重启 (pid $n)"; return 0; }
+      done
+      log_error "launchd 25s 内未拉起, 查 launchctl print system/$LAUNCHD_LABEL"; return 1 ;;
+  esac
+}
+
 cmd_start() {
+  if under_launchd; then launchd_cmd start; return; fi
   if is_running; then log_ok "Already running (pid $(cat "$PIDFILE")) — idempotent, exit 0"; exit 0; fi
   mkdir -p "$SCRIPT_DIR/run"
   rm -f "$PIDFILE"
@@ -74,6 +99,7 @@ cmd_start() {
 }
 
 cmd_stop() {
+  if under_launchd; then launchd_cmd stop; return; fi
   [[ -f "$PIDFILE" ]] || { log_warn "No pidfile; nothing to stop."; return 0; }
   local pid; pid="$(cat "$PIDFILE" 2>/dev/null || true)"
   if [[ -n "${pid:-}" ]] && kill -0 "$pid" 2>/dev/null; then
@@ -86,12 +112,16 @@ cmd_stop() {
   rm -f "$PIDFILE"
 }
 
-cmd_restart() { log_step "Restarting $SERVICE …"; cmd_stop || true; cmd_start; }
+cmd_restart() {
+  log_step "Restarting $SERVICE …"
+  if under_launchd; then launchd_cmd restart; return; fi
+  cmd_stop || true; cmd_start
+}
 
 cmd_status() {
   local pid="" health="not responding"
-  if is_running; then
-    pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+  if under_launchd; then pid="$(launchd_pid)"; elif is_running; then pid="$(cat "$PIDFILE" 2>/dev/null || true)"; fi
+  if [[ -n "${pid:-}" ]]; then
     if command -v curl &>/dev/null; then
       curl -s --max-time 3 "http://127.0.0.1:$PORT/health" &>/dev/null && health="OK" || health="FAILED"
     fi
