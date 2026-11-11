@@ -14,3 +14,6 @@ run/
 .worktree/
 # 本地运维手册（内部细节，不随公开仓发布）
 OPS.md
+
+# code-review-graph 生成的代码图谱（本地产物，不进 git）
+.code-review-graph/
