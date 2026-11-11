@@ -17,3 +17,7 @@ OPS.md
 
 # code-review-graph 生成的代码图谱（本地产物，不进 git）
 .code-review-graph/
+
+# agent 本地工具目录（本机产物，不进 git）
+.video_agent/
+.v2c/
