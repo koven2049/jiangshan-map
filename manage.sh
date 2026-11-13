@@ -178,6 +178,33 @@ cmd_deploy() {
   log_ok "已发布 → origin（koven2049/jiangshan-map）。"
 }
 
+cmd_deploy_local() {
+  # 同机部署正门：本机开发 = 本机生产（mini 常态）。不走 SSH、不查
+  # deploy-check（它拦的就是"目标=本机"，那是给跨机 deploy 防配置错指的）。
+  local dry_run=false target=""
+  while [[ $# -gt 0 ]]; do
+    case "$1" in
+      -d|--dry-run) dry_run=true ;;
+      -*) log_error "Unknown opt: $1"; exit 1 ;;
+      *) [[ -n "$target" ]] && { log_error "多余的参数: $1"; exit 1; }; target="$1" ;;
+    esac; shift
+  done
+  target="${target:-$HOME/Services/$(basename "$SCRIPT_DIR")}"
+  local excl="$SCRIPT_DIR/.rsync-exclude"
+  [[ -f "$excl" ]] || { log_error ".rsync-exclude missing — refusing bare --delete deploy."; exit 1; }
+  [[ -d "$target" ]] || { log_error "目标目录不存在: $target（不自动创建，防拼错路径静默部署；确认后 mkdir -p）"; exit 1; }
+  [[ "$(cd "$target" && pwd)" == "$SCRIPT_DIR" ]] && { log_error "目标与源目录相同，拒绝执行"; exit 1; }
+  local args=(-avz --delete --exclude-from="$excl")
+  [[ "$dry_run" == true ]] && args+=(--dry-run)
+  log_info "Deploying (local) → ${target} …"
+  rsync "${args[@]}" "$SCRIPT_DIR/" "$target/"
+  if [[ "$dry_run" == true ]]; then
+    log_warn "Dry-run only — 检查列表里不得出现 data/ logs/ config/*.cfg，确认后去掉 -d 正式部署"
+  else
+    log_ok "Deploy complete (code only). 本机执行: cd ${target} && ./manage.sh init && ./manage.sh restart"
+  fi
+}
+
 pick_node() {
   local c
   for c in "$(command -v node 2>/dev/null)" "$HOME"/.nvm/versions/node/*/bin/node; do
@@ -205,6 +232,8 @@ Commands:
   status    Process + /health probe (exit 0 only when fully green)
   logs      Tail server.log
   deploy [-d]  Validate → push origin (koven2049/jiangshan-map)
+  deploy-local [-d] [path]  Rsync code to local prod dir (same-machine dev);
+              default $HOME/Services/<repo-name>; -d dry-run
   help      Show this help
 
 Examples:
@@ -217,7 +246,7 @@ main() {
   local cmd="${1:-}"; [[ $# -gt 0 ]] && shift || true
   case "$cmd" in
     init) cmd_init;; start) cmd_start;; stop) cmd_stop;; restart) cmd_restart;;
-    status) cmd_status;; logs) cmd_logs "$@";; deploy) cmd_deploy "$@";;
+    status) cmd_status;; logs) cmd_logs "$@";; deploy) cmd_deploy "$@";; deploy-local) cmd_deploy_local "$@";;
     help|--help|-h) usage;;
     "") usage; exit 1;;
     *) log_error "Unknown command: $cmd"; usage; exit 1;;

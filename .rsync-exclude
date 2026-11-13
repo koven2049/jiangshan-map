@@ -1,0 +1,20 @@
+# deploy-local / rsync 部署排除清单：只同步代码，远端自增数据与密钥不碰
+# （--delete 只作用于未排除项；漏列自增目录会被当多余文件删掉）
+.git/
+.venv/
+venv/
+node_modules/
+__pycache__/
+*.py[cod]
+logs/
+data/
+runtime/
+run/
+config/*.cfg
+config/local.auth.json
+.env
+.worktree/
+.code-review-graph/
+.video_agent/
+.v2c/
+.DS_Store
