@@ -192,7 +192,7 @@ cmd_deploy_local() {
   target="${target:-$HOME/Services/$(basename "$SCRIPT_DIR")}"
   local excl="$SCRIPT_DIR/.rsync-exclude"
   [[ -f "$excl" ]] || { log_error ".rsync-exclude missing — refusing bare --delete deploy."; exit 1; }
-  [[ -d "$target" ]] || { log_error "目标目录不存在: $target（不自动创建，防拼错路径静默部署；确认后 mkdir -p）"; exit 1; }
+  [[ -d "$target" ]] || { log_error "目标目录不存在: ${target}（不自动创建，防拼错路径静默部署；确认后 mkdir -p）"; exit 1; }
   [[ "$(cd "$target" && pwd)" == "$SCRIPT_DIR" ]] && { log_error "目标与源目录相同，拒绝执行"; exit 1; }
   local args=(-avz --delete --exclude-from="$excl")
   [[ "$dry_run" == true ]] && args+=(--dry-run)
