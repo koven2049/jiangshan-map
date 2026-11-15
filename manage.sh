@@ -174,6 +174,11 @@ port_held_elsewhere() {
 # 指引，不硬错。
 SVC_CTL=/usr/local/bin/svc-ctl
 svc_ctl() { sudo -n "$SVC_CTL" "$@"; }
+# v2 helper（disable/enable/status 透传）缺失时 is_disabled 恒 false——四态退化旧三态。
+plist_present() { [[ -f "/Library/LaunchDaemons/$LAUNCHD_LABEL.plist" ]]; }
+is_disabled() {
+  [[ "$(svc_ctl status "$LAUNCHD_LABEL" 2>/dev/null | awk '$1=="disabled"{print $NF}')" == "true" ]]
+}
 
 # 系统域托管守卫（仅当本目录实例被 Daemon 托管时触发）：软停无意义——kill 后
 # KeepAlive 立即拉起，面板会显示「成功」但服务根本没停。真停 = svc_ctl
@@ -182,10 +187,12 @@ svc_ctl() { sudo -n "$SVC_CTL" "$@"; }
 # 未装、无法免密真停（调用方必须拒绝软停，exit 1）。
 guard_prod_daemon_stop() {
   daemon_managed_here || return 1
+  # 方案二：意图先落 disabled DB（跨重启持久、bootstrap 被拒防误启）再摘除。
+  svc_ctl disable "system/$LAUNCHD_LABEL" 2>/dev/null || true
   if svc_ctl bootout "system/$LAUNCHD_LABEL" 2>/dev/null; then
     sleep 1
     [[ -n "$(confirmed_server_pids | head -n 1)" ]] && stop_pid "$(confirmed_server_pids | head -n 1)" || true
-    log_ok "已停用（svc_ctl bootout）。重新上线：./manage.sh start（走 bootstrap）。"
+    log_ok "已停用（disable + bootout，跨重启持久）。重新上线：./manage.sh start（enable + bootstrap）。"
     return 0
   fi
   log_warn "本目录实例由系统 LaunchDaemon 托管（KeepAlive），软停会被立即拉起。"
@@ -249,6 +256,8 @@ cmd_start() {
   fi
   # 有章 = 生产副本（此前被 bootout 停用）：走 bootstrap 回托管，而非 nohup。
   if is_prod_instance; then
+    # 方案二：disabled 位拒 bootstrap，enable 必须先行。
+    svc_ctl enable "system/$LAUNCHD_LABEL" 2>/dev/null || true
     if svc_ctl bootstrap "system/$LAUNCHD_LABEL" 2>/dev/null; then
       sleep 2
       if wait_health; then
@@ -410,15 +419,24 @@ cmd_status() {
   elif [[ -n "${pid:-}" ]]; then
     state="running (PID $pid)"
   fi
+  # 生命周期四态（方案二；互斥完备，巡检者按 Lifecycle 行豁免/判异常）。
+  local lifecycle="not installed"
+  if plist_present; then
+    if system_managed; then lifecycle="running"
+    elif is_disabled; then lifecycle="stopped (intentional)"
+    else lifecycle="down"
+    fi
+  fi
   echo -e "${CYAN}┌─ $SERVICE (physical) · port $PORT ─────────────────${NC}"
   box_line "Status"  "$state"
   box_line "URL"     "http://localhost:$PORT"
   box_line "Health"  "$health"
   box_line "Public"  "https://deanchen.me/jiangshan-map/ (GitHub Pages, upstream repo)"
   box_line "Log"     "${LOGFILE#$SCRIPT_DIR/}"
-  # 托管形态只在托管时显示（Test 本目录跑不占行）。
-  if system_managed; then box_line "托管" "LaunchDaemon (system)"; fi
+  echo "Lifecycle: $lifecycle"
   echo -e "${CYAN}└──────────────────────────────────────────────────${NC}"
+  # 有意停用是合法状态不算故障 → exit 0（巡检豁免的机器依据）。
+  [[ "$lifecycle" == "stopped (intentional)" ]] && return 0
   # 全绿才 exit 0：未运行或健康失败 → 非零（监控依赖）
   [[ -n "${pid:-}" && "$health" == "OK" ]] || return 1
 }
