@@ -177,28 +177,30 @@ svc_ctl() { sudo -n "$SVC_CTL" "$@"; }
 # v2 helper（disable/enable/status 透传）缺失时 is_disabled 恒 false——四态退化旧三态。
 plist_present() { [[ -f "/Library/LaunchDaemons/$LAUNCHD_LABEL.plist" ]]; }
 is_disabled() {
-  [[ "$(svc_ctl status "$LAUNCHD_LABEL" 2>/dev/null | awk '$1=="disabled"{print $NF}')" == "true" ]]
+  # darwin 27：launchctl disable/enable 整套废弃（兼容桩 no-op，exit 0 不落库），
+  # print-disabled 也不再反映。持久停用 = svc_ctl disable（unload -w 写 disabled DB）；
+  # helper 的 isdisabled 读 disabled DB 判定（加载中 false，未加载且在 DB true）。
+  [[ "$(svc_ctl isdisabled "$LAUNCHD_LABEL" 2>/dev/null || echo false)" == "true" ]]
 }
 
 # 系统域托管守卫（仅当本目录实例被 Daemon 托管时触发）：软停无意义——kill 后
-# KeepAlive 立即拉起，面板会显示「成功」但服务根本没停。真停 = svc_ctl
-# bootout；helper 未装时降级为准确指引（一次性安装命令见提示）。
+# KeepAlive 立即拉起，面板会显示「成功」但服务根本没停。真停 = svc_ctl disable
+#（v2.6 = unload -w，真停 + 写 disabled DB 持久禁用一步完成）；
+# helper 未装时降级为准确指引（一次性安装命令见提示）。
 # 返回码：0=已真停完成；1=非本目录托管（调用方走各自路径）；2=托管但 helper
 # 未装、无法免密真停（调用方必须拒绝软停，exit 1）。
 guard_prod_daemon_stop() {
   daemon_managed_here || return 1
-  # 方案二：意图先落 disabled DB（跨重启持久、bootstrap 被拒防误启）再摘除。
-  svc_ctl disable "system/$LAUNCHD_LABEL" 2>/dev/null || true
-  if svc_ctl bootout "system/$LAUNCHD_LABEL" 2>/dev/null; then
+  if svc_ctl disable "system/$LAUNCHD_LABEL" 2>/dev/null; then
     sleep 1
     [[ -n "$(confirmed_server_pids | head -n 1)" ]] && stop_pid "$(confirmed_server_pids | head -n 1)" || true
-    log_ok "已停用（disable + bootout，跨重启持久）。重新上线：./manage.sh start（enable + bootstrap）。"
+    log_ok "已停用（unload -w，跨重启持久）。重新上线：./manage.sh start（load -w）。"
     return 0
   fi
   log_warn "本目录实例由系统 LaunchDaemon 托管（KeepAlive），软停会被立即拉起。"
   log_warn "免密真停需一次性安装 svc-ctl helper（root）："
   log_warn "  sudo bash ~/Services/install-svc-ctl.sh"
-  log_warn "装好后本命令即可真停；或手动 ! sudo launchctl bootout system/$LAUNCHD_LABEL"
+  log_warn "装好后本命令即可真停；或手动 ! sudo launchctl unload -w system/$LAUNCHD_LABEL"
   return 2
 }
 
@@ -254,22 +256,16 @@ cmd_start() {
     log_error "Test 与生产同端口不能并存：要跑本目录实例，先停生产（去 ~/Services 副本执行 stop 会给出 sudo 命令）。"
     exit 1
   fi
-  # 有章 = 生产副本（此前被 bootout 停用）：走 bootstrap 回托管，而非 nohup。
+  # 有章 = 生产副本（此前被停用）：v2.6 enable = load -w（清持久禁用 + 加载，
+  # KeepAlive 立即拉起）；darwin 27 上 bootstrap 组合对 unload 过的服务报 I/O error 5，弃用。
   if is_prod_instance; then
-    # 方案二：disabled 位拒 bootstrap，enable 必须先行。
     svc_ctl enable "system/$LAUNCHD_LABEL" 2>/dev/null || true
-    if svc_ctl bootstrap "system/$LAUNCHD_LABEL" 2>/dev/null; then
-      sleep 2
-      if wait_health; then
-        log_ok "Started via svc_ctl bootstrap.  pid $(port_listener_pid)  →  http://localhost:$PORT"
-        return 0
-      fi
-      log_error "Bootstrap done but /health not passing."
-      return 1
+    sleep 2
+    if wait_health; then
+      log_ok "已回托管（load -w）。  pid $(port_listener_pid)  →  http://localhost:$PORT"
+      return 0
     fi
-    log_error "免密启动失败：svc-ctl helper 未安装（root 一次性安装）："
-    log_error "  sudo bash ~/Services/install-svc-ctl.sh"
-    log_error "或手动 ! sudo launchctl bootstrap system /Library/LaunchDaemons/$LAUNCHD_LABEL.plist"
+    log_error "免密启动失败：svc-ctl helper 未安装（root 一次性安装）：sudo bash ~/Services/install-svc-ctl.sh"
     exit 1
   fi
   start_service || exit 1
