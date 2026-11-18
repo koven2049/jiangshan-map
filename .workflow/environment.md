@@ -3,10 +3,10 @@
 ```
 唯一来源；tools/multica/.workflow/environment.md 软链到此，改动只改本文件。
 作用：跨机器开发时的环境事实来源。SSH 去哪、代理怎么走、进程怎么托管、
-公网域名怎么挂、Multica 团队怎么接。
-何时读：开工不在本机、要部署、要挂域名、要访问外网、或需要派活给其它机器上的 agent。
+公网域名怎么挂。
+何时读：开工不在本机、要部署、要挂域名、要访问外网。
 凭证 / 密码 / token 不写本文件；代理具体命令以各机 root 下 README 为准。
-last-reviewed: 2026-11-10
+last-reviewed: 2026-11-18
 ```
 
 开发目录（两台 Mac 相同）：`~/Documents/workspace/ai`
@@ -169,7 +169,7 @@ aliyun-hk                --访问中国大陆网站受阻时才走-->  经隧道
 | 凭证 | 不要动 `cert.pem` / tunnel json |
 | 每台机器 | 自己一条 tunnel（macmini 上是 `mac-mini-tunnel`） |
 
-ingress 典型形态：`hostname` → `http://localhost:<port>`，最后一条 `http_status:404`。需要 WebSocket 直通后端时，用 `path:` 把 `/ws` 等路径单独指到 API 端口（Multica 就是这样）。
+ingress 典型形态：`hostname` → `http://localhost:<port>`，最后一条 `http_status:404`。需要 WebSocket 直通后端时，用 `path:` 把 `/ws` 等路径单独指到 API 端口。
 
 ---
 
@@ -186,38 +186,10 @@ ingress 典型形态：`hostname` → `http://localhost:<port>`，最后一条 `
 
 ---
 
-## 8. Multica
-
-自托管团队看板：人和本机 AI agent 当队友派 issue。数据只在 macmini postgres。**不要用** `multica.ai` 云（那边的 token 在这里会 `invalid PAT: no rows`）。
-
-| | |
-|---|---|
-| 入口 | `https://multica.koven2049.xyz` |
-| 服务端 | 仅 `ts-macmini-m4`：`~/Services/multica`（podman + compose，只绑 127.0.0.1，公网走 cloudflared） |
-| 运维 | 该目录 `./manage.sh status/logs/restart/rebuild`；细节看同目录 `OPS.md` |
-| 客户端 | 两台 Mac 的 `~/.multica/config.json`（及桌面 App 的 `desktop.json`）都指向上面这个 URL |
-| 登录码 | 没配邮件。本机跑 `multica-code` |
-
-**派活：** 网页 / App / `multica` CLI 建 issue，指派给下表里的 agent。任务在 **daemon 所在那台机器本机** 跑（不是容器里），用该机器已装 CLI 的凭证。
-
-| 机器 | 谁在跑 |
-|---|---|
-| ts-macmini-m4 | claude, kimi |
-| ts-macbook-air | claude, codex, grok, kimi, qoderclicn |
-
-先 `multica runtime list` 看谁在线。云主机 SSH 不回开发机时，用这条路让对面机器上的 agent 干活。
-
-**改端口 / 域名：** 宿主端口看 `.env` + compose，**不要写进别的文档**。frontend 不能代理 WebSocket，所以 `/ws` 必须在 `/etc/cloudflared/config.yml` 里单独指到 backend；改端口要 `.env` 和 ingress 一起改。
-
-**别踩：** `compose logs --since` 在这套 podman 上会挂死；改 `.env` 必须 `up -d`（`restart` 不重读）；本机自加文件（`manage.sh` / `OPS.md` / `start.sh`）不要放进 git 跟踪路径——`rebuild` 会 `checkout --force`。
-
----
-
-## 9. Agent 行为速查
+## 8. Agent 行为速查
 
 1. 先判断自己在哪台机器（`hostname` / `whoami`），再选 SSH 目标与代理。  
 2. 部署默认 `dev@` 云主机；只有用户点名或高敏感服务才动 `root@aliyun-sz2`。  
 3. macmini 上放公共产物；开机自启用系统 LaunchDaemon + UserName=admin（见上「Mac 开机自启铁律」）。  
 4. 挂公网域名：改那台机器的 `/etc/cloudflared/config.yml`，不要另造一份域名清单。  
-5. 出网失败先直连再代理；云主机代理命令只从该机 `root` 下 README 读。  
-6. 需要其它机器上的 agent 干活：走 Multica 派 issue，不要假设云主机能量产 SSH 回笔记本。
+5. 出网失败先直连再代理；云主机代理命令只从该机 `root` 下 README 读。
