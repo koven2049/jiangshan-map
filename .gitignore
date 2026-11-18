@@ -21,3 +21,10 @@ OPS.md
 # agent 本地工具目录（本机产物，不进 git）
 .video_agent/
 .v2c/
+
+# Local configuration and generated files
+.claude/settings.local.json
+.claude/worktrees/
+.worktrees/
+.codex/
+.agents/
