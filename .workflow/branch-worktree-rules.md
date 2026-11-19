@@ -33,15 +33,15 @@
 git -C <仓库> fetch --prune
 git -C <仓库> status --short            # 主目录有别人的在途改动：先问清归属（见下），确认后再 pull
 git -C <仓库> pull origin main          # 从最新 main 起步
-git branch --merged origin/main | grep -v main$   # 有输出 = 已合并残留，逐个 git branch -d
-git worktree prune && git worktree list  # 先清失效登记；看现有 worktree 避免撞车，已合并挂着的空壳一并 remove
+git branch --merged origin/main | grep -v main$   # 有输出 = 清理候选，按 §3 核实验收
+git worktree prune && git worktree list  # 先清失效登记；看现有 worktree 避免撞车，已合并残留先核对 §3 的交付证据再清理
 git worktree add ../.worktree/<仓库>-wt-<简述> -b feat/<简述>
 cd ../.worktree/<仓库>-wt-<简述>        # 在这里开发
 ```
 
-- **开工巡检（自愈）**：第 3 行清的是**已合并**残留——上个 agent 忘了清，你来清；
+- **开工巡检（自愈）**：这里只清**已验收且已合并**的残留——上个 agent 忘了清，你来清；
   `-d` 天然不会误删未合并分支，放心用。分支未合并、或 worktree 里有未提交改动的
-  一律不动，报告用户。
+  一律不动，报告用户。已合并的分支和 worktree 也要先核对 §3 的交付证据，验收待定时保留。
 - 发现 main 上有未提交改动：不是你的就不要动，先问清归属，绝不能顺手提交。
 - 命名：分支用 `feat/<简述>` / `fix/<简述>` / `task/<简述>`（任务/实验）；worktree
   目录统一建在**仓库同级的 `.worktree/` 目录下**（不直接散在同级），子目录名
@@ -64,29 +64,60 @@ cd ../.worktree/<仓库>-wt-<简述>        # 在这里开发
 占空间），但工作目录、未提交改动、运行时产物完全隔离。走哪一档只看文件头的
 可自检判据，不看「有没有别人在跑」。
 
-### 3. 收尾：PR 合并回 main → **部署** → 清理
+### 3. 收尾：提交 → 合并与推送 → 部署与线上验证 → 清理
+
+以下示例从任务 worktree 开始，按保留提交 SHA 的 PR 合并演示。先将占位符替换为本仓实际值；任一步失败即停在该步。直做档沿用相同的提交、远端和生产验收，省略 PR 与 worktree 清理。
 
 ```bash
-git status --short          # 应只有自己的改动；只 add 自己动过的文件
-git push -u origin feat/<简述>
-gh pr create && gh pr merge --delete-branch   # 或 GitHub MCP；PR 留给用户合并也不阻塞，清理由下次开工巡检兜底
-git -C <主目录> pull origin main              # 必须先更新本地 main，否则下一步 -d 必失败
-git -C <主目录> push origin main              # 合并即推：主分支与远程推平（rsync 部署 ≠ 已 push；无远程的工程跳过）
-git worktree remove ../.worktree/<仓库>-wt-<简述>  # 先删 worktree（分支还挂在其上，删不掉）
-git branch -d feat/<简述>    # -d 失败 = 未真合并：停下排查，禁止换 -D 硬删
+set -eu
+wt=$(git rev-parse --show-toplevel)
+branch=$(git branch --show-current)
+primary='<主检出绝对路径>'
+base=main
+git status --short --untracked-files=all
+git add -- '<本次文件>'                 # 逐项列出任务文件，包含新增和删除
+git diff --cached --check
+git diff --cached                      # 核对范围、内容及敏感信息
+git commit -m '<类型>: <摘要>'           # 按工程要求填写提交正文
+task_sha=$(git rev-parse HEAD)
+git show --stat "$task_sha"             # 对照交付清单，确认改动确实在提交里
+test -z "$(git status --porcelain --untracked-files=all)"
+
+git push -u origin "$branch"
+gh pr create --base "$base" --head "$branch" --fill
+gh pr merge "$branch" --merge           # 等待实际合并；保留 worktree 直到验收完毕
+cd "$primary"
+test "$(git branch --show-current)" = "$base"
+git pull --ff-only origin "$base"
+release_sha=$(git rev-parse HEAD)       # 本次准备部署的主分支版本
+git merge-base --is-ancestor "$task_sha" "$release_sha"
+git push origin "$base"
+git fetch origin "refs/heads/$base:refs/remotes/origin/$base"
+git merge-base --is-ancestor "$release_sha" "refs/remotes/origin/$base"
+
+# 有生产变更时，在 HEAD 等于 release_sha 的干净部署源执行（目录选择见下文）
+cd '<本次发布的部署源>'
+test "$(git rev-parse HEAD)" = "$release_sha"
+test -z "$(git status --porcelain --untracked-files=all)"
+./manage.sh deploy                      # 同机改用 ./manage.sh deploy-local
+# 下列三项替换为本工程真实探针；任一失败，保留现场
+actual_sha=$(read_running_production_revision)
+test "$actual_sha" = "$release_sha"
+curl -fsS '<生产 health URL>'
+verify_production_readonly_response     # 请求关键只读接口，核对预期业务字段或值
+
+cd "$primary"
+git worktree remove "$wt"
+git branch -d "$branch"
 ```
 
-- **收尾硬判定**（三条全过才算完成，不满足不得报告「已完成」）：
-  ```bash
-  git branch --merged origin/main | grep -v main$   # ① 应无输出：无已合并未删分支
-  git worktree list                                  # ② 自己的 <仓库>-wt-<简述> 已不在列表
-  git rev-list --count origin/main..main            # ③ 应为 0：主分支与远程推平
-  ```
-  只清自己的：别的会话/机器的在途 worktree 与分支不算残留，不动也不等。
+**收尾硬判定**
 
-- **合并让 main 产生了代码改动 → 若该工程有部署流程，立即重新部署并验证
-  health**（`./manage.sh deploy` + 重启 + health 检查）。合并不部署 = 生产
-  还跑旧代码，后续「已修复」的说法都是假的。
+1. **任务已提交。** 对照任务文件、差异和验收清单，记录实际承载改动的完整 SHA。已分步提交时复核整段任务差异并记录末次提交，省略重复提交。检查任务范围内已暂存、未暂存及未跟踪文件，防止漏交；别人的改动保留。仅凭工作区干净或 ahead 计数为零不能证明本次改动已交付。
+2. **主分支已收到。** 推送后重新获取远端主分支，验证本次提交已进入发布提交，且远端包含发布提交，如上两条祖先检查。采用 squash/rebase 时，从已合并 PR 取得实际落入主分支的提交，核对其差异覆盖任务后，用该 SHA 验证归属并保留原任务 SHA。无发布远程的仓库核对本地主分支包含任务提交，注明仅本地提交。
+3. **生产已验证。** 核对运行实例返回的完整版本，或将运行中的镜像摘要、构建标识与发布提交对应；rsync 工程可核对本次变更的产物哈希，并确认运行进程加载该产物。HTTP 服务还要验证健康探针和一个关键只读接口的业务结果；非 HTTP 工程核对实际运行版本并执行项目既有只读状态或功能检查。无法证明版本时报告“生产版本未验证”。纯文档、本地改动、无部署目标或用户明确暂缓部署时，略过示例的整个生产段并写明原因。
+4. **最后清理。** 以上适用项通过后，仅移除本任务的 worktree 和已合并分支，再用 `git worktree list` 与 `git branch --list` 核对。PR 待合并、部署失败或线上验收未通过时，保留现场并报告停在哪一步；不强删分支。
+
 - **从自己的 worktree 部署（主目录有别的 agent 在途改动时必选）**：deploy 是
   rsync 按源目录原样同步，脏主目录 = 把别人的半成品推上生产（2026-08-25 险情
   实录）。全新 worktree 天生缺被 gitignore 的部署配置，部署前从主 worktree
@@ -107,9 +138,7 @@ git branch -d feat/<简述>    # -d 失败 = 未真合并：停下排查，禁�
 
 - **主分支名**：示例命令里的 `main` 按该仓实际主分支替换（个别仓库用
   `master`）；巡检/清理用 `git branch --merged origin/<主分支>`。
-- **合并方式**：部分子工程走本地 `git merge` 而非 PR。合并后顺序不变：
-  本地主分支更新 → `git push`（**合并即推**，有远程必做）→ `git worktree remove`
-  → `git branch -d`；`-d` 失败说明未真合并，停下排查，禁止 `-D` 硬删。
+- **本地合并**：将示例中推送任务分支及创建、合并 PR 的步骤替换为在主检出更新主分支并执行 `git merge <任务分支>`。随后按 §3 推送并核对远端、按需部署并验证运行版本与功能，最后清理；`branch -d` 失败时保留分支排查。
 
 ### 6. 共享 venv 工程（trade-system）的 worktree 纪律
 
